@@ -1,8 +1,10 @@
 #include <assert.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include "buffer.h"
 #include "cache.h"
@@ -28,6 +30,7 @@ __noret usage(int status)
 			"%s <link> [options]\n\n"
 			"-Q              show HTTP request header(s)\n"
 			"-S              show HTTP response headers(s)\n"
+			"--open/-O       open article in text editor when done\n"
 			"--TLS/-T        use a secure TLS connection\n"
 			"--print/-P      print the parsed article to stdout\n"
 			"--help/-h       display this information\n",
@@ -53,6 +56,12 @@ get_runtime_options(int argc, char *argv[])
 		|| !strcmp("-h", argv[i]))
 		{
 			usage(EXIT_SUCCESS);
+		}
+		else
+		if (!strcmp("--open", argv[i])
+		|| !strcmp("-O", argv[i]))
+		{
+			set_option(OPT_OPEN_FINISH);
 		}
 		else
 		if (!strcmp("-Q", argv[i]))
@@ -83,6 +92,26 @@ get_runtime_options(int argc, char *argv[])
 	}
 }
 
+static void
+check_wikigrab_dir(void)
+{
+	char *home;
+	buf_t tmp_buf;
+
+	home = getenv("HOME");
+	buf_init(&tmp_buf, pathconf("/", _PC_PATH_MAX));
+	buf_append(&tmp_buf, home);
+	buf_append(&tmp_buf, WIKIGRAB_DIR);
+
+	if (access(tmp_buf.buf_head, F_OK) != 0)
+	{
+		mkdir(tmp_buf.buf_head, S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH);
+	}
+
+	buf_destroy(&tmp_buf);
+	return;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -94,6 +123,13 @@ main(int argc, char *argv[])
 
 	get_runtime_options(argc, argv);
 
+	if (!strstr(argv[1], "/wiki/"))
+	{
+		fprintf(stderr,
+			"Not a wiki link!\n\n");
+		usage(EXIT_FAILURE);
+	}
+
 	printf(
 		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
 		"\n"
@@ -101,6 +137,8 @@ main(int argc, char *argv[])
 		"\n"
 		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
 		WIKIGRAB_BUILD);
+
+	check_wikigrab_dir();
 
 	connection_t conn;
 	buf_t read_copy;
