@@ -5,13 +5,14 @@ LIBS=-lcrypto -lssl
 
 .PHONY: clean
 
-SOURCE_FILES=main.c http.c parse.c connection.c buffer.c cache.c
+SOURCE_FILES=main.c format.c http.c parse.c connection.c buffer.c cache.c
 OBJ_FILES=$(SOURCE_FILES:.c=.o)
 
 DEP_FILES := \
 	buffer.h \
 	cache.h \
 	connection.h \
+	format.h \
 	parse.h \
 	wikigrab.h
 
