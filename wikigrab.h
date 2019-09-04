@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define WIKIGRAB_BUILD "0.0.2"
+#define WIKIGRAB_DIR "/Wiki_Articles"
 
 #define clear_struct(s) memset((s), 0, sizeof((*s)))
 
@@ -20,5 +21,6 @@ uint32_t runtime_options;
 #define OPT_OUT_TTY 0x2 /* Print the parsed file to stdout */
 #define OPT_REQ_HEADER 0x4 /* Print HTTP request header(s) */
 #define OPT_RES_HEADER 0x8 /* Print HTTP response header(s) */
+#define OPT_OPEN_FINISH 0x10 /* Open the article when done */
 
 #endif /* !defined WIKI_H */
