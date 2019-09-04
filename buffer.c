@@ -79,6 +79,13 @@ buf_collapse(buf_t *buf, off_t offset, size_t range)
 
 	bytes = (end - from);
 
+	if (!bytes)
+	{
+		memset(to, 0, range);
+		__buf_push_tail(buf, range);
+		return;
+	}
+
 	memmove(to, from, bytes);
 	to = (end - range);
 	memset(to, 0, range);
@@ -188,7 +195,6 @@ buf_snip(buf_t *buf, size_t how_much)
 {
 	__buf_push_tail(buf, how_much);
 	memset(buf->buf_tail, 0, how_much);
-	buf->data_len -= how_much;
 
 	return;
 }
