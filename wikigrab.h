@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define WIKIGRAB_BUILD "0.0.1"
+#define WIKIGRAB_BUILD "0.0.2"
 
 #define clear_struct(s) memset((s), 0, sizeof((*s)))
 
