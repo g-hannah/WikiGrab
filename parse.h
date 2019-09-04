@@ -3,7 +3,7 @@
 
 #include "buffer.h"
 
-#define LEFT_ALIGN_WIDTH	15
+#define LEFT_ALIGN_WIDTH	28
 
 int extract_wiki_article(buf_t *);
 

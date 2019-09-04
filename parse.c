@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "buffer.h"
+#include "format.h"
 #include "http.h"
 #include "parse.h"
 #include "wikigrab.h"
@@ -148,11 +149,11 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 
-	buf_append(&content_buf, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-	buf_append(&content_buf, "         Grabbed by WikiGrab v");
+	buf_append(&content_buf, "             @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
+	buf_append(&content_buf, "                      Grabbed by WikiGrab v");
 	buf_append(&content_buf, WIKIGRAB_BUILD);
 	buf_append(&content_buf, "\n\n");
-	buf_append(&content_buf, "--------------------------------------------\n\n");
+	buf_append(&content_buf, "             >>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<\n\n");
 
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 	
@@ -204,7 +205,7 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 
-	buf_append(&content_buf, "\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
+	buf_append(&content_buf, "\n          @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 
 	/*
@@ -460,6 +461,8 @@ extract_wiki_article(buf_t *buf)
 		write(STDOUT_FILENO, content_buf.buf_head, content_buf.data_len);
 
 	assert((content_buf.buf_tail - content_buf.buf_head) == content_buf.data_len);
+
+	format_article(&content_buf);
 
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 	close(out_fd);
