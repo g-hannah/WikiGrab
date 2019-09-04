@@ -88,6 +88,7 @@ extract_wiki_article(buf_t *buf)
 	http_header_t *date;
 	size_t range;
 	static char scratch_buf[DEFAULT_MAX_LINE_SIZE];
+	char *home;
 
 	server = (http_header_t *)wiki_cache_alloc(http_hcache);
 	date = (http_header_t *)wiki_cache_alloc(http_hcache);
@@ -97,6 +98,11 @@ extract_wiki_article(buf_t *buf)
 
 	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
 	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
+
+	home = getenv("HOME");
+	buf_append(&file_title, home);
+	buf_append(&file_title, WIKIGRAB_DIR);
+	buf_append(&file_title, "/");
 
 	RESET();
 	GET_TAG_CONTENT("<title", p, savep, tail);
@@ -110,14 +116,14 @@ extract_wiki_article(buf_t *buf)
 		if (q)
 			buf_collapse(&content_buf, (off_t)(q - content_buf.buf_head), (content_buf.buf_tail - q));
 
-		buf_copy(&file_title, &content_buf);
+		buf_append(&file_title, content_buf.buf_head);
 
 		q = saveq = file_title.buf_head;
 
 		while (q < file_title.buf_tail)
 		{
 			if (*q == 0x20
-			|| (!isalpha(*q) && !isdigit(*q)))
+			|| (*q != 0x2f && *q != 0x5f && !isalpha(*q) && !isdigit(*q)))
 			{
 				*q++ = 0x5f;
 				if (*(q-2) == 0x5f)
@@ -253,6 +259,7 @@ extract_wiki_article(buf_t *buf)
 		while (*p == '<')
 		{
 			savep = p;
+
 			p = memchr(savep, '>', (tail - savep));
 
 			++p;
@@ -327,6 +334,9 @@ extract_wiki_article(buf_t *buf)
 
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
+
+	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
+
 	while(1)
 	{
 		p = memchr(savep, 0x2e, (tail - savep));
@@ -344,8 +354,13 @@ extract_wiki_article(buf_t *buf)
 
 		range = (q - p);
 
+		buf_append_ex(&copy_buf, p, range);
+
 		if ((*(q-1) == 0x2e)
 		|| (*(q-1) == ')' && *(q-2) == 0x2e)
+		|| strstr(copy_buf.buf_head, "&lt;")
+		|| strstr(copy_buf.buf_head, "&gt;")
+		|| strstr(copy_buf.buf_head, "&quot;")
 		|| (isdigit(*(savep-1)) && isdigit(*(savep+1)))
 		|| (!memchr(p, '-', range)
 		&& !memchr(p, '{', range)
@@ -367,6 +382,8 @@ extract_wiki_article(buf_t *buf)
 		savep = p;
 		tail = content_buf.buf_tail;
 	}
+
+	buf_destroy(&copy_buf);
 
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
@@ -462,17 +479,38 @@ extract_wiki_article(buf_t *buf)
 
 	assert((content_buf.buf_tail - content_buf.buf_head) == content_buf.data_len);
 
+#ifdef DEBUG
+	buf_write_fd(STDOUT_FILENO, &content_buf);
+#endif
+
 	format_article(&content_buf);
+
+#ifdef DEBUG
+	buf_write_fd(STDOUT_FILENO, &content_buf);
+#endif
 
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 	close(out_fd);
 	out_fd = -1;
 
+	wiki_cache_dealloc(http_hcache, (void *)server);
+	wiki_cache_dealloc(http_hcache, (void *)date);
+
+	if (option_set(OPT_OPEN_FINISH))
+	{
+		pid_t child;
+
+		child = fork();
+
+		if (!child)
+		{
+			execlp("gedit", file_title.buf_head, (char *)0);
+		}
+	}
+
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
 
-	wiki_cache_dealloc(http_hcache, (void *)server);
-	wiki_cache_dealloc(http_hcache, (void *)date);
 	return 0;
 
 	out_destroy_file:
