@@ -205,7 +205,7 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 
-	buf_append(&content_buf, "\n          @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
+	buf_append(&content_buf, "\n             @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 
 	/*
