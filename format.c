@@ -36,10 +36,16 @@ format_article(buf_t *buf)
 		if (line_end > tail)
 			line_end = tail;
 
+		if (line_start >= line_end)
+			break;
+
 		savep = line_start;
 
 		while (1)
 		{
+			if (savep >= line_end)
+				break;
+
 			p = memchr(savep, 0x0a, (line_end - savep));
 
 			if (!p)
@@ -58,11 +64,6 @@ format_article(buf_t *buf)
 			savep = p;
 		}
 
-		if (line_end == tail)
-		{
-			break;
-		}
-		else
 		if (*line_end == 0x0a)
 		{
 			while (*line_end == 0x0a)
@@ -74,6 +75,7 @@ format_article(buf_t *buf)
 			*line_end++ = 0x0a;
 		}
 		else
+		if (line_end != tail)
 		{
 			while (*line_end != 0x20)
 				--line_end;
@@ -108,14 +110,13 @@ format_article(buf_t *buf)
 					++p;
 
 				savep = p;
-			}
 
-			printf("gaps=%d\n", gaps);
+				if (savep >= new_line)
+					break;
+			}
 
 			passes = (delta / gaps);
 			remainder = (delta % gaps);
-
-			printf("passes=%d ; remainder=%d\n", passes, remainder);
 
 			p = savep = line_start;
 			while (passes > 0)
@@ -126,7 +127,6 @@ format_article(buf_t *buf)
 				{
 					--passes;
 					p = savep = line_start;
-					printf("passes=%d\n", passes);
 					continue;
 				}
 
@@ -208,8 +208,10 @@ format_article(buf_t *buf)
 			} /* if (remainder) */
 		} /* if (delta > 0) */
 
-		printf("%.*s\n", (int)(new_line - line_start), line_start);
 		line_start = line_end;
+
+		if (line_end == tail)
+			break;
 	} /* while(1) */
 
 	return 0;
