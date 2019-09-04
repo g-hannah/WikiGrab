@@ -94,6 +94,14 @@ main(int argc, char *argv[])
 
 	get_runtime_options(argc, argv);
 
+	printf(
+		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+		"\n"
+		"      WikiGrab v%s\n"
+		"\n"
+		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
+		WIKIGRAB_BUILD);
+
 	connection_t conn;
 	buf_t read_copy;
 	http_header_t *location;
