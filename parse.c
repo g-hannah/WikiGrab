@@ -107,40 +107,31 @@ extract_wiki_article(buf_t *buf)
 		q = strstr(saveq, " - ");
 
 		if (q)
-		{
 			buf_collapse(&content_buf, (off_t)(q - content_buf.buf_head), (content_buf.buf_tail - q));
-			buf_append(&content_buf, "\n");
-		}
 
 		buf_copy(&file_title, &content_buf);
-		if (*(file_title.buf_tail - 1) == 0x0a)
-			buf_snip(&file_title, 1);
 
 		q = saveq = file_title.buf_head;
 
 		while (q < file_title.buf_tail)
 		{
 			if (*q == 0x20
-			|| !isascii(*q))
+			|| (!isalpha(*q) && !isdigit(*q)))
 			{
-				*q = 0x5f;
+				*q++ = 0x5f;
+				if (*(q-2) == 0x5f)
+				{
+					--q;
+					buf_collapse(&file_title, (off_t)(q - file_title.buf_head), (size_t)1);
+				}
+				continue;
 			}
 
 			++q;
 		}
 
-		q = (file_title.buf_tail - 1);
-		saveq = q;
-
-		while (!isalpha(*q) && !isdigit(*q))
-			--q;
-
-		size_t range = (saveq - q);
-
-		if (range)
-		{
-			buf_collapse(&file_title, (off_t)(q - file_title.buf_head), range);
-		}
+		while (!isalpha(*(file_title.buf_tail - 1)) && !isdigit(*(file_title.buf_tail - 1)))
+			buf_snip(&file_title, 1);
 
 		buf_append_ex(&file_title, ".txt", 4);
 
@@ -167,6 +158,7 @@ extract_wiki_article(buf_t *buf)
 	
 	sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Title: ");
 	write(out_fd, scratch_buf, strlen(scratch_buf));
+	buf_append(&copy_buf, "\n");
 	write(out_fd, copy_buf.buf_head, copy_buf.data_len);
 
 	buf_destroy(&copy_buf);
@@ -264,7 +256,11 @@ extract_wiki_article(buf_t *buf)
 
 			++p;
 
-			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), (p - savep));
+			range = (p - savep);
+#ifdef DEBUG
+			printf("removing %.*s\n", (int)range, savep);
+#endif
+			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 			p = savep;
 			tail = content_buf.buf_tail;
 		}
@@ -290,7 +286,11 @@ extract_wiki_article(buf_t *buf)
 
 		p += strlen("&#93;");
 
-		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), (p - savep));
+		range = (p - savep);
+#ifdef DEBUG
+		printf("removing %.*s\n", (int)range, savep);
+#endif
+		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 		p = savep;
 		tail = content_buf.buf_tail;
 	}
@@ -310,7 +310,16 @@ extract_wiki_article(buf_t *buf)
 
 		p = memchr(savep, ';', (tail - savep));
 
-		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), (p - savep));
+		if (!p)
+			break;
+
+		++p;
+
+		range = (p - savep);
+#ifdef DEBUG
+		printf("removing %.*s\n", (int)range, savep);
+#endif
+		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 		p = savep;
 		tail = content_buf.buf_tail;
 	}
@@ -350,7 +359,9 @@ extract_wiki_article(buf_t *buf)
 			continue;
 		}
 
+#ifdef DEBUG
 		printf("removing %.*s\n", (int)range, p);
+#endif
 		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
 		savep = p;
 		tail = content_buf.buf_tail;
@@ -379,6 +390,9 @@ extract_wiki_article(buf_t *buf)
 				q = memchr(savep, 0x20, (tail - savep));
 
 				range = (q - p);
+#ifdef DEBUG
+				printf("removing %.*s\n", (int)range, p);
+#endif
 				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
 				savep = q = p;
 				tail = content_buf.buf_tail;
@@ -392,6 +406,9 @@ extract_wiki_article(buf_t *buf)
 				if (p)
 				{
 					range = (p - savep);
+#ifdef DEBUG
+					printf("removing %*.s\n", (int)range, savep);
+#endif
 					buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 					p = savep;
 					tail = content_buf.buf_tail;
@@ -425,7 +442,11 @@ extract_wiki_article(buf_t *buf)
 		{
 			++savep;
 
-			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), (p - savep));
+			range = (p - savep);
+#ifdef DEBUG
+			printf("removing %*s\n", (int)range, savep);
+#endif
+			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 			p = savep;
 			tail = content_buf.buf_tail;
 		}
@@ -435,17 +456,10 @@ extract_wiki_article(buf_t *buf)
 		}
 	}
 
-	p = content_buf.buf_tail - 1;
-	while (!isalpha(*p))
-		--p;
-
-	range = (content_buf.buf_tail - p);
-
-	if (range)
-		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
-
 	if (option_set(OPT_OUT_TTY))
 		write(STDOUT_FILENO, content_buf.buf_head, content_buf.data_len);
+
+	assert((content_buf.buf_tail - content_buf.buf_head) == content_buf.data_len);
 
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 	close(out_fd);
