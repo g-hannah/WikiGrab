@@ -16,6 +16,15 @@ format_article(buf_t *buf)
 	char *line_end;
 	char *p;
 	char *savep;
+	char *left;
+	char *right;
+	char *new_line;
+	size_t line_len;
+	size_t delta;
+	int	gaps = 0;
+	int passes;
+	int remainder;
+	int volte_face = 0;
 
 	line_start = buf->buf_head;
 
@@ -72,8 +81,136 @@ format_article(buf_t *buf)
 			*line_end++ = 0x0a;
 		}
 
+		new_line = (line_end - 1);
+		while (*new_line == 0x0a)
+			--new_line;
+
+		++new_line;
+
+		line_len = (new_line - line_start);
+		delta = (WIKI_ARTICLE_LINE_LENGTH - line_len);
+
+		if (delta > 0)
+		{
+			p = savep = line_start;
+			gaps = 0;
+
+			while (1)
+			{
+				p = memchr(savep, 0x20, (new_line - savep));
+
+				if (!p)
+					break;
+
+				++gaps;
+
+				while (*p == 0x20)
+					++p;
+
+				savep = p;
+			}
+
+			printf("gaps=%d\n", gaps);
+
+			passes = (delta / gaps);
+			remainder = (delta % gaps);
+
+			printf("passes=%d ; remainder=%d\n", passes, remainder);
+
+			p = savep = line_start;
+			while (passes > 0)
+			{
+				p = memchr(savep, 0x20, (new_line - savep));
+
+				if (!p)
+				{
+					--passes;
+					p = savep = line_start;
+					printf("passes=%d\n", passes);
+					continue;
+				}
+
+				buf_shift(buf, (off_t)(p - buf->buf_head), 1);
+				++line_end;
+				++new_line;
+
+				*p++ = 0x20;
+
+				while (*p == 0x20)
+					++p;
+
+				savep = p;
+			}
+
+			if (remainder)
+			{
+				left = line_start;
+				right = new_line;
+				volte_face = 0;
+
+				while (remainder)
+				{
+					if (!volte_face)
+					{
+						p = memchr(left, 0x20, (right - left));
+
+						if (!p)
+						{
+							left = line_start;
+							right = new_line;
+							volte_face = 0;
+							continue;
+						}
+					}
+					else
+					{
+						p = right;
+						while (*p != 0x20 && p > left)
+							--p;
+
+						if (p == left)
+						{
+							left = line_start;
+							right = new_line;
+							volte_face = 0;
+							continue;
+						}
+					}
+
+					buf_shift(buf, (off_t)(p - buf->buf_head), 1);
+
+					++line_end;
+					++new_line;
+					++right;
+
+					*p++ = 0x20;
+					--remainder;
+
+					if (!volte_face)
+					{
+						while (*p == 0x20)
+							++p;
+
+						left = p;
+
+						volte_face = 1;
+					}
+					else
+					{
+						while (*p == 0x20)
+							--p;
+
+						right = p;
+
+						volte_face = 0;
+					}
+				} /* while(remainder) */
+			} /* if (remainder) */
+		} /* if (delta > 0) */
+
+		printf("%.*s\n", (int)(new_line - line_start), line_start);
 		line_start = line_end;
-	}
+	} /* while(1) */
 
 	return 0;
 }
