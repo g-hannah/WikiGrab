@@ -6,6 +6,58 @@
 #include "format.h"
 #include "wikigrab.h"
 
+static void
+replace_html_entities(buf_t *buf)
+{
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+
+	p = savep = buf->buf_head;
+	while(1)
+	{
+		p = strstr(savep, "&quot;");
+
+		if (!p)
+			break;
+
+		*p++ = 0x22;
+		buf_collapse(buf, (off_t)(p - buf->buf_head), 5);
+		savep = p;
+		tail -= 5;
+	}
+
+	p = savep = buf->buf_head;
+	while(1)
+	{
+		p = strstr(savep, "&lt;");
+
+		if (!p)
+			break;
+
+		*p++ = 0x3c;
+		buf_collapse(buf, (off_t)(p - buf->buf_head), 3);
+		savep = p;
+		tail -= 3;
+	}
+
+	p = savep = buf->buf_head;
+	while(1)
+	{
+		p = strstr(savep, "&gt;");
+
+		if (!p)
+			break;
+
+		*p++ = 0x3e;
+		buf_collapse(buf, (off_t)(p - buf->buf_head), 3);
+		savep = p;
+		tail -= 3;
+	}
+
+	return;
+}
+
 int
 format_article(buf_t *buf)
 {
@@ -74,28 +126,45 @@ format_article(buf_t *buf)
 
 		if (*line_end == 0x0a)
 		{
+			new_line = line_end;
+
 			while (*line_end == 0x0a)
 				++line_end;
 		}
 		else
 		if (*line_end == 0x20)
 		{
+			new_line = line_end;
+
 			*line_end++ = 0x0a;
 		}
 		else
-		if (line_end != tail)
+		if (line_end < tail)
 		{
-			while (*line_end != 0x20)
+			while (*line_end != 0x20 && line_end > (line_start + 1))
 				--line_end;
+
+			if (line_end == line_start)
+			{
+				line_end += WIKI_ARTICLE_LINE_LENGTH;
+				buf_shift(buf, (off_t)(line_end - buf->buf_head), 1);
+				++tail;
+				*line_end++ = 0x0a;
+				while (*line_end == 0x0a)
+					++line_end;
+				line_start = line_end;
+				continue;
+			}
+
+			new_line = line_end;
 
 			*line_end++ = 0x0a;
 		}
 
-		new_line = (line_end - 1);
-		while (*new_line == 0x0a)
-			--new_line;
-
-		++new_line;
+		if (line_end >= tail)
+		{
+			line_end = new_line = tail;
+		}
 
 		line_len = (new_line - line_start);
 		delta = (WIKI_ARTICLE_LINE_LENGTH - line_len);
@@ -121,6 +190,18 @@ format_article(buf_t *buf)
 
 				if (savep >= new_line)
 					break;
+			}
+
+			if (line_len < (WIKI_ARTICLE_LINE_LENGTH / 3))
+			{
+				line_start = line_end;
+				continue;
+			}
+
+			if (!gaps)
+			{
+				line_start = line_end;
+				continue;
 			}
 
 			passes = (delta / gaps);
@@ -149,6 +230,9 @@ format_article(buf_t *buf)
 					++p;
 
 				savep = p;
+
+				if (savep >= new_line)
+					break;
 			}
 
 			if (remainder)
@@ -223,6 +307,8 @@ format_article(buf_t *buf)
 		if (line_end == tail)
 			break;
 	} /* while(1) */
+
+	replace_html_entities(buf);
 
 	return 0;
 }
