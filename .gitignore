@@ -1,0 +1,6 @@
+*.txt
+*.gch
+*.o
+.*
+!.gitignore
+wikigrab
