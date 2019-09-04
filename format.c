@@ -26,6 +26,14 @@ format_article(buf_t *buf)
 	int remainder;
 	int volte_face = 0;
 
+	p = buf->buf_head;
+	if (*p != 0x0a)
+	{
+		buf_shift(buf, (off_t)0, 3);
+		strncpy(p, "\n\n\n", 3);
+	}
+
+	tail = buf->buf_tail;
 	line_start = buf->buf_head;
 
 	while (1)
@@ -133,6 +141,7 @@ format_article(buf_t *buf)
 				buf_shift(buf, (off_t)(p - buf->buf_head), 1);
 				++line_end;
 				++new_line;
+				++tail;
 
 				*p++ = 0x20;
 
@@ -182,6 +191,7 @@ format_article(buf_t *buf)
 					++line_end;
 					++new_line;
 					++right;
+					++tail;
 
 					*p++ = 0x20;
 					--remainder;
