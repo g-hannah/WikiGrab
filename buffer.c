@@ -107,7 +107,7 @@ buf_shift(buf_t *buf, off_t offset, size_t range)
 	char *to = from + range;
 
 	if (range > buf_slack(buf))
-		buf_extend(buf, range);
+		buf_extend(buf, (range - buf_slack(buf)));
 
 	memmove(to, from, buf->buf_tail - from);
 	memset(from, 0, range);
