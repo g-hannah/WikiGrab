@@ -15,6 +15,7 @@
 #include "parse.h"
 #include "wikigrab.h"
 
+#if 0
 /**
  * Copy contents of HTML tag into buffer - append LF
  */
@@ -71,8 +72,89 @@ do {\
 	else\
 		(p) = (s);\
 } while(0)
+#endif
 
 #define RESET() (p = savep = buf->buf_head)
+
+static char tag_content[8192];
+
+char *
+get_tag_content(buf_t *buf, const char *tag)
+{
+	assert(buf);
+	assert(tag);
+
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+
+	p = strstr(buf->buf_head, tag);
+
+	if (!p)
+		return NULL;
+
+	savep = p;
+
+	p = memchr(savep, 0x3e, (tail - savep));
+
+	if (!p)
+		return NULL;
+
+	savep = ++p;
+
+	p = memchr(savep, 0x3c, (tail - savep));
+
+	if (!p)
+		return NULL;
+
+	strncpy(tag_content, savep, (p - savep));
+	tag_content[p - savep] = 0;
+
+	return tag_content;
+}
+
+char *
+get_tag_field(buf_t *buf, const char *tag, const char *field)
+{
+	assert(buf);
+	assert(tag);
+	assert(field);
+
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+
+	p = strstr(buf->buf_head, tag);
+
+	if (!p)
+		return NULL;
+
+	savep = p;
+
+	p = strstr(savep, field);
+
+	if (!p)
+		return NULL;
+
+	savep = p;
+
+	/* e.g. "content=\"..."
+	 *       s         p
+	 */
+	p += (strlen(field) + 2);
+
+	savep = p;
+
+	p = memchr(savep, 0x22, (tail - savep));
+
+	if (!p)
+		return NULL;
+
+	strncpy(tag_content, savep, (p - savep));
+	tag_content[p - savep] = 0;
+
+	return tag_content;
+}
 
 int
 remove_braces(buf_t *buf)
@@ -189,6 +271,51 @@ remove_braces(buf_t *buf)
 	return 0;
 }
 
+void
+normalise_file_title(buf_t *buf)
+{
+	assert(buf);
+
+	char *tail = buf->buf_tail;
+	char *p = buf->buf_head;
+
+	p = strstr(buf->buf_head, " - Wikipedia");
+	if (p)
+		buf_collapse(buf, (off_t)(p - buf->buf_head), (buf->buf_tail - p));
+
+	while (p < tail)
+	{
+		if (*p == 0x20
+		|| (*p != 0x2f && *p != 0x5f && !isalpha(*p) && !isdigit(*p)))
+		{
+			*p++ = 0x5f;
+			if (*(p-2) == 0x5f)
+			{
+				--p;
+				buf_collapse(buf, (off_t)(p - buf->buf_head), (size_t)1);
+				tail = buf->buf_tail;
+			}
+
+			continue;
+		}
+
+		++p;
+	}
+
+	while (!isalpha(*(buf->buf_tail - 1)) && !isdigit(*(buf->buf_tail - 1)))
+		buf_snip(buf, 1);
+
+	if (option_set(OPT_FORMAT_XML))
+		buf_append(buf, ".xml");
+	else
+	if (option_set(OPT_FORMAT_JSON))
+		buf_append(buf, ".json");
+	else
+		buf_append(buf, ".txt");
+
+	return;
+}
+
 int
 extract_wiki_article(buf_t *buf)
 {
@@ -197,16 +324,27 @@ extract_wiki_article(buf_t *buf)
 	char *p;
 	char *q;
 	char *savep;
-	char *saveq;
+	//char *saveq;
 	buf_t file_title;
 	buf_t content_buf;
+	buf_t tmp_buf;
 	buf_t copy_buf;
 	http_header_t *server;
 	http_header_t *date;
 	http_header_t *lastmod;
 	size_t range;
-	static char scratch_buf[DEFAULT_MAX_LINE_SIZE];
+	//static char scratch_buf[DEFAULT_MAX_LINE_SIZE];
+	static char inet6_string[INET6_ADDRSTRLEN];
+	char *large_buffer = NULL;
 	char *home;
+	struct sockaddr_in sock4;
+	struct sockaddr_in6 sock6;
+	struct addrinfo *ainf = NULL;
+	struct addrinfo *aip = NULL;
+	//int gotv4 = 0;
+	int gotv6 = 0;
+
+	large_buffer = calloc(8192, 1);
 
 	server = (http_header_t *)wiki_cache_alloc(http_hcache);
 	date = (http_header_t *)wiki_cache_alloc(http_hcache);
@@ -217,6 +355,7 @@ extract_wiki_article(buf_t *buf)
 	assert(wiki_cache_obj_used(http_hcache, (void *)lastmod));
 
 	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
+	buf_init(&tmp_buf, DEFAULT_TMP_BUF_SIZE);
 	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
 
 	home = getenv("HOME");
@@ -224,114 +363,27 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&file_title, WIKIGRAB_DIR);
 	buf_append(&file_title, "/");
 
-	RESET();
-	GET_TAG_CONTENT("<title", p, savep, tail);
+	get_tag_content(buf, "<title");
+	buf_append(&file_title, tag_content);
+	buf_append(&tmp_buf, tag_content);
+	normalise_file_title(&file_title);
 
-	if (p != savep)
-	{
-		q = saveq = content_buf.buf_head;
-
-		q = strstr(saveq, " - ");
-
-		if (q)
-			buf_collapse(&content_buf, (off_t)(q - content_buf.buf_head), (content_buf.buf_tail - q));
-
-		buf_append(&file_title, content_buf.buf_head);
-
-		q = saveq = file_title.buf_head;
-
-		while (q < file_title.buf_tail)
-		{
-			if (*q == 0x20
-			|| (*q != 0x2f && *q != 0x5f && !isalpha(*q) && !isdigit(*q)))
-			{
-				*q++ = 0x5f;
-				if (*(q-2) == 0x5f)
-				{
-					--q;
-					buf_collapse(&file_title, (off_t)(q - file_title.buf_head), (size_t)1);
-				}
-				continue;
-			}
-
-			++q;
-		}
-
-		while (!isalpha(*(file_title.buf_tail - 1)) && !isdigit(*(file_title.buf_tail - 1)))
-			buf_snip(&file_title, 1);
-
-		buf_append_ex(&file_title, ".txt", 4);
-
-		if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
-			goto out_destroy_bufs;
-
-		buf_init(&copy_buf, content_buf.data_len);
-		buf_copy(&copy_buf, &content_buf);
-	}
-	else
-	{
+	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
 		goto out_destroy_bufs;
-	}
-
-	buf_clear(&content_buf);
-
-	buf_append(&content_buf, "      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-	buf_append(&content_buf, "                   Downloaded via WikiGrab v");
-	buf_append(&content_buf, WIKIGRAB_BUILD);
-	buf_append(&content_buf, "\n\n");
-	buf_append(&content_buf, "      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n");
-
-	write(out_fd, content_buf.buf_head, content_buf.data_len);
-	
-	sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Title: ");
-	write(out_fd, scratch_buf, strlen(scratch_buf));
-	buf_append(&copy_buf, "\n");
-	write(out_fd, copy_buf.buf_head, copy_buf.data_len);
-
-	buf_destroy(&copy_buf);
 
 	http_fetch_header(buf, "Server", server, (off_t)0);
 	http_fetch_header(buf, "Date", date, (off_t)0);
 	http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0);
 
-	if (date->value[0])
-	{
-		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Obtained: ");
-		write(out_fd, scratch_buf, strlen(scratch_buf));
-		date->value[date->vlen++] = 0x0a;
-		date->value[date->vlen] = 0;
-		write(out_fd, date->value, date->vlen);
-	}
-
-	if (lastmod->value[0])
-	{
-		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Last-modified: ");
-		write(out_fd, scratch_buf, strlen(scratch_buf));
-		lastmod->value[lastmod->vlen++] = 0x0a;
-		lastmod->value[lastmod->vlen] = 0;
-		write(out_fd, lastmod->value, lastmod->vlen);
-	}
-
 	if (server->value[0])
 	{
-		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Served-by: ");
-		write(out_fd, scratch_buf, strlen(scratch_buf));
-		server->value[server->vlen++] = 0x0a;
-		server->value[server->vlen] = 0;
-		write(out_fd, server->value, server->vlen);
-
 		/*
 		 * Get IP address(es) of server.
 		 */
-		struct addrinfo *ainf = NULL, *aip = NULL;
-		struct sockaddr_in sock4;
-		struct sockaddr_in6 sock6;
-		int gotv4 = 0;
-		int gotv6 = 0;
 
 		clear_struct(&sock4);
 		clear_struct(&sock6);
-		server->value[--server->vlen] = 0;
+
 		getaddrinfo(server->value, NULL, NULL, &ainf);
 		if (ainf)
 		{
@@ -341,7 +393,7 @@ extract_wiki_article(buf_t *buf)
 				&& aip->ai_family == AF_INET)
 				{
 					memcpy(&sock4, aip->ai_addr, aip->ai_addrlen);
-					gotv4 = 1;
+					//gotv4 = 1;
 					break;
 				}
 			}
@@ -356,49 +408,62 @@ extract_wiki_article(buf_t *buf)
 				}
 			}
 		}
-
-		if (gotv4)
-		{
-			sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Server-ip-v4: ");
-			write(out_fd, scratch_buf, strlen(scratch_buf));
-			sprintf(scratch_buf, "%s\n", inet_ntoa(sock4.sin_addr));
-			write(out_fd, scratch_buf, strlen(scratch_buf));
-			freeaddrinfo(ainf);
-			ainf = aip = NULL;
-		}
-
-		if (gotv6)
-		{
-			static char inet6_string[INET6_ADDRSTRLEN];
-			sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Server-ip-v6: ");
-			write(out_fd, scratch_buf, strlen(scratch_buf));
-			inet_ntop(AF_INET6, (char *)sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN);
-			sprintf(scratch_buf, "%s\n", inet6_string);
-		}
 	}
 
-	RESET();
-	GET_INTAG_CONTENT("<meta name=\"generator\"", "content", p, savep, tail);
-	if (p != savep)
+	if (gotv6)
+		inet_ntop(AF_INET6, sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN);
+	else
+		inet6_string[0] = 0;
+
+	if (option_set(OPT_FORMAT_XML))
 	{
-		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Generated-by: ");
-		write(out_fd, scratch_buf, strlen(scratch_buf));
-		write(out_fd, content_buf.buf_head, content_buf.data_len);
+		sprintf(large_buffer,
+			"<?xml version=\"1.0\" ?>\n"
+			"<wiki>\n"
+			"<meta>\n"
+			"<via>WikiGrab v%s</via>\n"
+			"<server>\n"
+			"<name>%*s</name>\n"
+			"<ipv4>%s</ipv4>\n"
+			"<ipv6>%s</ipv6>\n"
+			"</server>\n"
+			"<modified>%s</modified>\n"
+			"<downloaded>%s</downloaded>\n"
+			"</meta>"
+			"<title>%s</title>",
+			WIKIGRAB_BUILD,
+			(int)server->vlen, server->value,
+			inet_ntoa(sock4.sin_addr),
+			inet6_string[0] ? inet6_string : "none",
+			lastmod->value,
+			date->value,
+			tmp_buf.buf_head);
 	}
-
-	RESET();
-	GET_INTAG_CONTENT("<meta", "charset", p, savep, tail);
-	if (p != savep)
+	else
+	if (option_set(OPT_FORMAT_TXT))
 	{
-		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Charset: ");
-		write(out_fd, scratch_buf, strlen(scratch_buf));
-		write(out_fd, content_buf.buf_head, content_buf.data_len);
+		sprintf(large_buffer,
+			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n"
+			"                    Downloaded via WikiGrab v%s\n\n"
+			"      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n\n"
+			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
+			WIKIGRAB_BUILD,
+			LEFT_ALIGN_WIDTH, "Title: ", tmp_buf.buf_head,
+			LEFT_ALIGN_WIDTH, "Served-by: ", server->value,
+			LEFT_ALIGN_WIDTH, "Server-ip-v4: ", inet_ntoa(sock4.sin_addr),
+			LEFT_ALIGN_WIDTH, "Server-ip-v6: ", inet6_string,
+			LEFT_ALIGN_WIDTH, "Last-modified: ", lastmod->value,
+			LEFT_ALIGN_WIDTH, "Downloaded: ", date->value);
 	}
 
+	write(out_fd, large_buffer, strlen(large_buffer));
 	buf_clear(&content_buf);
-
-	buf_append(&content_buf, "\n      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-	write(out_fd, content_buf.buf_head, content_buf.data_len);
 
 
 /*
@@ -413,6 +478,7 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 	buf_clear(&content_buf);
+
 	savep = p;
 
 	while (1)
@@ -429,10 +495,11 @@ extract_wiki_article(buf_t *buf)
 			break;
 
 		buf_append_ex(&content_buf, savep, (p - savep));
-		buf_append_ex(&content_buf, "\n\n", 2);
+		buf_append(&content_buf, "\n");
 
 		savep = p;
 	}
+
 
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
@@ -466,6 +533,12 @@ extract_wiki_article(buf_t *buf)
 			p = savep;
 			tail = content_buf.buf_tail;
 		}
+	}
+
+	if (option_set(OPT_FORMAT_XML))
+	{
+		buf_shift(&content_buf, (off_t)0, strlen("<text>\n"));
+		strncpy(content_buf.buf_head, "<text>\n", strlen("<text>\n"));
 	}
 
 	/*
@@ -624,6 +697,9 @@ extract_wiki_article(buf_t *buf)
 
 	format_article(&content_buf);
 
+	if (option_set(OPT_FORMAT_XML))
+		buf_append(&content_buf, "</text>\n</wiki>\n");
+
 	buf_write_fd(out_fd, &content_buf);
 	close(out_fd);
 	out_fd = -1;
@@ -646,6 +722,11 @@ extract_wiki_article(buf_t *buf)
 
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
+	if (tmp_buf.data)
+		buf_destroy(&tmp_buf);
+
+	free(large_buffer);
+	large_buffer = NULL;
 
 	return 0;
 
@@ -656,6 +737,11 @@ extract_wiki_article(buf_t *buf)
 	out_destroy_bufs:
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
+	if (tmp_buf.data)
+		buf_destroy(&tmp_buf);
+
+	free(large_buffer);
+	large_buffer = NULL;
 
 	wiki_cache_dealloc(http_hcache, (void *)server);
 	wiki_cache_dealloc(http_hcache, (void *)date);
