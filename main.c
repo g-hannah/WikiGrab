@@ -58,6 +58,21 @@ get_runtime_options(int argc, char *argv[])
 			usage(EXIT_SUCCESS);
 		}
 		else
+		if (!strcmp("--xml", argv[i]))
+		{
+			set_option(OPT_FORMAT_XML);
+		}
+		else
+		if (!strcmp("--txt", argv[i]))
+		{
+			set_option(OPT_FORMAT_TXT);
+		}
+		else
+		if (!strcmp("--json", argv[i]))
+		{
+			set_option(OPT_FORMAT_JSON);
+		}
+		else
 		if (!strcmp("--open", argv[i])
 		|| !strcmp("-O", argv[i]))
 		{
@@ -90,6 +105,12 @@ get_runtime_options(int argc, char *argv[])
 			continue;
 		}
 	}
+
+	/*
+	 * If none set, use default of txt
+	 */
+	if (!option_set(OPT_FORMAT_TXT|OPT_FORMAT_JSON|OPT_FORMAT_XML))
+		set_option(OPT_FORMAT_TXT);
 }
 
 static void
