@@ -143,7 +143,9 @@ remove_braces(buf_t *buf)
 
 			if (depth == 0) /* then we've found the outermost right brace for our initial left brace */
 			{
+#ifdef DEBUG
 				printf("removing \x1b[38;5;9mLINE_START\x1b[m%.*s\x1b[38;5;9mLINE_END\x1b[m\n", (int)(outer_end - outer_start), outer_start);
+#endif
 				buf_collapse(buf, (off_t)(outer_start - buf->buf_head), (outer_end - outer_start));
 				break;
 			}
@@ -427,7 +429,7 @@ extract_wiki_article(buf_t *buf)
 			break;
 
 		buf_append_ex(&content_buf, savep, (p - savep));
-		buf_append_ex(&content_buf, "\n\n", 1);
+		buf_append_ex(&content_buf, "\n\n", 2);
 
 		savep = p;
 	}
