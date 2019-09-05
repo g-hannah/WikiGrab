@@ -1,6 +1,8 @@
 #include <assert.h>
+#include <arpa/inet.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -71,6 +73,119 @@ do {\
 } while(0)
 
 #define RESET() (p = savep = buf->buf_head)
+
+int
+remove_braces(buf_t *buf)
+{
+	assert(buf);
+
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+	char *outer_start;
+	char *outer_end;
+	char *search_from;
+	int depth = 0;
+	size_t range;
+
+/*
+ * 1. FIND LEFT BRACE
+ * 2. IF NO LEFT BRACE, GOTO 9, ELSE FIND NEXT RIGHT BRACE
+ * 3. SEARCH [LEFTBRACE+1,RIGHT_BRACE) FOR MORE LEFT BRACES
+ * 4. IF MORE LEFT BRACES, FIND EQUAL NUMBER OF RIGHT BRACES FROM [RIGHTBRACE+1...TAIL), ELSE GOTO 7
+ * 5. SEARCH RANGE [RIGHTBRACE+1...NEW RIGHT BRACE) FOR MORE LEFT BRACES
+ * 6. GOTO 4
+ * 7. REMOVE RANGE [FIRST LEFT BRACE...LAST RIGHT BRACE]
+ * 8. GO TO START OF BUFFER, GOTO 1
+ * 9. END
+ */
+
+	while(1)
+	{
+		p = savep = buf->buf_head;
+		depth = 0;
+
+		outer_start = memchr(savep, 0x7b, (tail - savep));
+
+		if (!outer_start)
+			goto out;
+
+		search_from = (outer_start + 1);
+		outer_end = memchr(search_from, 0x7d, (tail - search_from));
+
+		if (!outer_end)
+		{
+			outer_end = tail;
+			goto out_collapse;
+		}
+
+		++outer_end;
+
+		for(;;)
+		{
+			savep = search_from;
+			depth = 0;
+
+			while(1)
+			{
+				p = memchr(savep, 0x7b, (outer_end - savep));
+
+				if (!p)
+					break;
+
+				++depth;
+
+				savep = ++p;
+
+				if (p >= outer_end)
+					break;
+			}
+
+			if (depth == 0) /* then we've found the outermost right brace for our initial left brace */
+			{
+				printf("removing \x1b[38;5;9mLINE_START\x1b[m%.*s\x1b[38;5;9mLINE_END\x1b[m\n", (int)(outer_end - outer_start), outer_start);
+				buf_collapse(buf, (off_t)(outer_start - buf->buf_head), (outer_end - outer_start));
+				break;
+			}
+
+			search_from = outer_end;
+			savep = search_from;
+
+			while (depth > 0)
+			{
+				if (*outer_end != 0x7d)
+					outer_end = memchr(savep, 0x7d, (tail - savep));
+
+				if (!outer_end)
+				{
+					outer_end = tail;
+					goto out_collapse;
+				}
+
+				--depth;
+
+				++outer_end;
+				savep = outer_end;
+
+				if (savep >= tail)
+					break;
+			}
+		} /* for(;;) */
+	} /* while(1) */
+
+
+	/*
+	 * We jump here if we never found a matching closing
+	 * right brace, so we just clear from the outer
+	 * left brace to the tail of the buffer.
+	 */
+	out_collapse:
+	range = (outer_end - outer_start);
+	buf_collapse(buf, (off_t)(outer_start - buf->buf_head), range);
+
+	out:
+	return 0;
+}
 
 int
 extract_wiki_article(buf_t *buf)
@@ -202,6 +317,62 @@ extract_wiki_article(buf_t *buf)
 		server->value[server->vlen++] = 0x0a;
 		server->value[server->vlen] = 0;
 		write(out_fd, server->value, server->vlen);
+
+		/*
+		 * Get IP address(es) of server.
+		 */
+		struct addrinfo *ainf = NULL, *aip = NULL;
+		struct sockaddr_in sock4;
+		struct sockaddr_in6 sock6;
+		int gotv4 = 0;
+		int gotv6 = 0;
+
+		clear_struct(&sock4);
+		clear_struct(&sock6);
+		server->value[--server->vlen] = 0;
+		getaddrinfo(server->value, NULL, NULL, &ainf);
+		if (ainf)
+		{
+			for (aip = ainf; aip; aip = aip->ai_next)
+			{
+				if (aip->ai_socktype == SOCK_STREAM
+				&& aip->ai_family == AF_INET)
+				{
+					memcpy(&sock4, aip->ai_addr, aip->ai_addrlen);
+					gotv4 = 1;
+					break;
+				}
+			}
+
+			for (aip = ainf; aip; aip = aip->ai_next)
+			{
+				if (aip->ai_family == AF_INET6)
+				{
+					memcpy(&sock6, aip->ai_addr, aip->ai_addrlen);
+					gotv6 = 1;
+					break;
+				}
+			}
+		}
+
+		if (gotv4)
+		{
+			sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Server-ip-v4: ");
+			write(out_fd, scratch_buf, strlen(scratch_buf));
+			sprintf(scratch_buf, "%s\n", inet_ntoa(sock4.sin_addr));
+			write(out_fd, scratch_buf, strlen(scratch_buf));
+			freeaddrinfo(ainf);
+			ainf = aip = NULL;
+		}
+
+		if (gotv6)
+		{
+			static char inet6_string[INET6_ADDRSTRLEN];
+			sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Server-ip-v6: ");
+			write(out_fd, scratch_buf, strlen(scratch_buf));
+			inet_ntop(AF_INET6, (char *)sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN);
+			sprintf(scratch_buf, "%s\n", inet6_string);
+		}
 	}
 
 	RESET();
@@ -231,6 +402,9 @@ extract_wiki_article(buf_t *buf)
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
+
+	remove_braces(buf);
+
 	RESET();
 	p = strstr(savep, "\"mw-content-text\"");
 	if (!p)
@@ -284,7 +458,7 @@ extract_wiki_article(buf_t *buf)
 
 			range = (p - savep);
 #ifdef DEBUG
-			printf("removing %.*s\n", (int)range, savep);
+			printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 			p = savep;
@@ -314,7 +488,7 @@ extract_wiki_article(buf_t *buf)
 
 		range = (p - savep);
 #ifdef DEBUG
-		printf("removing %.*s\n", (int)range, savep);
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 		tail = content_buf.buf_tail;
@@ -343,7 +517,7 @@ extract_wiki_article(buf_t *buf)
 
 		range = (p - savep);
 #ifdef DEBUG
-		printf("removing %.*s\n", (int)range, savep);
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 		p = savep;
@@ -394,7 +568,7 @@ extract_wiki_article(buf_t *buf)
 		}
 
 #ifdef DEBUG
-		printf("removing %.*s\n", (int)range, p);
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
 		savep = p;
@@ -402,62 +576,6 @@ extract_wiki_article(buf_t *buf)
 	}
 
 	buf_destroy(&copy_buf);
-
-#if 0
-	p = savep = content_buf.buf_head;
-	tail = content_buf.buf_tail;
-	while(1)
-	{
-		p = memchr(savep, 0x7b, (tail - savep));
-
-		if (!p)
-			break;
-
-		if (!isspace(*(p+1)))
-		{
-			if (!isspace(*(p-1)))
-			{
-				savep = p;
-
-				while (!isspace(*p))
-					--p;
-
-				++p;
-
-				q = memchr(savep, 0x20, (tail - savep));
-
-				range = (q - p);
-#ifdef DEBUG
-				printf("removing %.*s\n", (int)range, p);
-#endif
-				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
-				savep = q = p;
-				tail = content_buf.buf_tail;
-			}
-			else
-			{
-				savep = p;
-
-				p = memchr(savep, 0x20, (tail - savep));
-
-				if (p)
-				{
-					range = (p - savep);
-#ifdef DEBUG
-					printf("removing %*.s\n", (int)range, savep);
-#endif
-					buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-					p = savep;
-					tail = content_buf.buf_tail;
-				}
-			}
-		}
-		else
-		{
-			savep = ++p;
-		}
-	}
-#endif
 
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
@@ -485,7 +603,7 @@ extract_wiki_article(buf_t *buf)
 
 			range = (p - savep);
 #ifdef DEBUG
-			printf("removing %*s\n", (int)range, savep);
+			printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
 			p = savep;
@@ -504,7 +622,7 @@ extract_wiki_article(buf_t *buf)
 
 	format_article(&content_buf);
 
-	write(out_fd, content_buf.buf_head, content_buf.data_len);
+	buf_write_fd(out_fd, &content_buf);
 	close(out_fd);
 	out_fd = -1;
 
