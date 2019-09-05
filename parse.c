@@ -421,24 +421,22 @@ extract_wiki_article(buf_t *buf)
 		sprintf(large_buffer,
 			"<?xml version=\"1.0\" ?>\n"
 			"<wiki>\n"
-			"<meta>\n"
-			"<via>WikiGrab v%s</via>\n"
-			"<server>\n"
-			"<name>%*s</name>\n"
-			"<ipv4>%s</ipv4>\n"
-			"<ipv6>%s</ipv6>\n"
-			"</server>\n"
-			"<modified>%s</modified>\n"
-			"<downloaded>%s</downloaded>\n"
-			"</meta>"
-			"<title>%s</title>",
+			"<metadata>\n"
+			"<meta name=\"Title\" content=\"%s\"/>\n"
+			"<meta name=\"Parser\" content=\"WikiGrab v%s\"/>\n"
+			"<meta name=\"Server\" content=\"%s\"/>\n"
+			"<meta name=\"Server-ipv4\" content=\"%s\"/>\n"
+			"<meta name=\"Server-ipv6\" content=\"%s\"/>\n"
+			"<meta name=\"Modified\" content=\"%s\"/>\n"
+			"<meta name=\"Downloaded\" content=\"%s\"/>\n"
+			"</metadata>",
+			tmp_buf.buf_head,
 			WIKIGRAB_BUILD,
-			(int)server->vlen, server->value,
+			server->value,
 			inet_ntoa(sock4.sin_addr),
 			inet6_string[0] ? inet6_string : "none",
 			lastmod->value,
-			date->value,
-			tmp_buf.buf_head);
+			date->value);
 	}
 	else
 	if (option_set(OPT_FORMAT_TXT))
@@ -495,7 +493,9 @@ extract_wiki_article(buf_t *buf)
 		if (!p)
 			break;
 
+		buf_append(&content_buf, "BEGIN_PARA");
 		buf_append_ex(&content_buf, savep, (p - savep));
+		buf_append(&content_buf, "END_PARA");
 		buf_append(&content_buf, "\n");
 
 		savep = p;
@@ -689,6 +689,25 @@ extract_wiki_article(buf_t *buf)
 		{
 			savep = p;
 		}
+	}
+
+	p = savep = content_buf.buf_head;
+	while(1)
+	{
+		p = strstr(savep, "BEGIN_PARA");
+		if (!p)
+			break;
+
+		strncpy(p, "<p>", 3);
+		p += 3;
+		savep = p;
+		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (strlen("BEGIN_PARA") - 3));
+
+		p = strstr(savep, "END_PARA");
+		strncpy(p, "</p>\n\n", strlen("</p>\n\n"));
+		p += strlen("</p>\n\n");
+		savep = p;
+		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (strlen("END_PARA") - strlen("</p>\n\n")));
 	}
 
 	if (option_set(OPT_OUT_TTY))
