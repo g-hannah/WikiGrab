@@ -22,5 +22,8 @@ uint32_t runtime_options;
 #define OPT_REQ_HEADER 0x4 /* Print HTTP request header(s) */
 #define OPT_RES_HEADER 0x8 /* Print HTTP response header(s) */
 #define OPT_OPEN_FINISH 0x10 /* Open the article when done */
+#define OPT_FORMAT_XML 0x20
+#define OPT_FORMAT_JSON 0x40
+#define OPT_FORMAT_TXT 0x80
 
 #endif /* !defined WIKI_H */
