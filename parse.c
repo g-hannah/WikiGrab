@@ -283,6 +283,7 @@ normalise_file_title(buf_t *buf)
 	if (p)
 		buf_collapse(buf, (off_t)(p - buf->buf_head), (buf->buf_tail - p));
 
+	p = buf->buf_head;
 	while (p < tail)
 	{
 		if (*p == 0x20
