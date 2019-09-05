@@ -460,8 +460,9 @@ buf_write_fd(int fd, buf_t *buf)
 	size_t towrite = buf->data_len;
 	ssize_t n;
 	ssize_t total = 0;
+	const char *tail = buf->buf_tail;
 
-	while (towrite > 0)
+	while (buf->buf_head < tail)
 	{
 		n = write(fd, buf->buf_head, towrite);
 
