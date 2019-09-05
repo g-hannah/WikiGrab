@@ -6,6 +6,48 @@
 #include "format.h"
 #include "wikigrab.h"
 
+/*
+ * buf_shift() could require extending the buffer,
+ * and this in turn could result in our data
+ * being copied to somewhere else in the heap.
+ * So save all the offsets and restore them
+ * after the shift.
+ */
+#define BUF_SHIFT_SAFE(by, optr)\
+do {\
+	size_t __lstart_off;\
+	size_t __lend_off;\
+	size_t __nloff;\
+	size_t __rightoff;\
+	size_t __poff;\
+	size_t __spoff;\
+	if (line_start)\
+		__lstart_off = (line_start - buf->buf_head);\
+	if (line_end)\
+		__lend_off = (line_end - buf->buf_head);\
+	if (new_line)\
+		__nloff = (new_line - buf->buf_head);\
+	if (right)\
+		__rightoff = (right - buf->buf_head);\
+	if (p)\
+		__poff = (p - buf->buf_head);\
+	if (savep)\
+		__spoff = (savep - buf->buf_head);\
+	buf_shift(buf, (off_t)((optr) - buf->buf_head), (by));\
+	if (line_start)\
+		line_start = (buf->buf_head + __lstart_off);\
+	if (line_end)\
+		line_end = (buf->buf_head + __lend_off);\
+	if (new_line)\
+		new_line = (buf->buf_head + __nloff);\
+	if (right)\
+		right = (buf->buf_head + __rightoff);\
+	if (p)\
+		p = (buf->buf_head + __poff);\
+	if (savep)\
+		savep = (buf->buf_head + __spoff);\
+} while(0)
+
 static void
 replace_html_entities(buf_t *buf)
 {
@@ -18,13 +60,13 @@ replace_html_entities(buf_t *buf)
 	{
 		p = strstr(savep, "&quot;");
 
-		if (!p)
+		if (!p || p >= tail)
 			break;
 
 		*p++ = 0x22;
 		buf_collapse(buf, (off_t)(p - buf->buf_head), 5);
 		savep = p;
-		tail -= 5;
+		tail = buf->buf_tail;
 	}
 
 	p = savep = buf->buf_head;
@@ -32,13 +74,13 @@ replace_html_entities(buf_t *buf)
 	{
 		p = strstr(savep, "&lt;");
 
-		if (!p)
+		if (!p || p >= tail)
 			break;
 
 		*p++ = 0x3c;
 		buf_collapse(buf, (off_t)(p - buf->buf_head), 3);
 		savep = p;
-		tail -= 3;
+		tail = buf->buf_tail;
 	}
 
 	p = savep = buf->buf_head;
@@ -46,13 +88,13 @@ replace_html_entities(buf_t *buf)
 	{
 		p = strstr(savep, "&gt;");
 
-		if (!p)
+		if (!p || p >= tail)
 			break;
 
 		*p++ = 0x3e;
 		buf_collapse(buf, (off_t)(p - buf->buf_head), 3);
 		savep = p;
-		tail -= 3;
+		tail = buf->buf_tail;
 	}
 
 	return;
@@ -64,13 +106,13 @@ format_article(buf_t *buf)
 	assert(buf);
 
 	char *tail = buf->buf_tail;
-	char *line_start;
-	char *line_end;
-	char *p;
-	char *savep;
-	char *left;
-	char *right;
-	char *new_line;
+	char *line_start = NULL;
+	char *line_end = NULL;
+	char *p = NULL;
+	char *savep = NULL;
+	char *left = NULL;
+	char *right = NULL;
+	char *new_line = NULL;
 	size_t line_len;
 	size_t delta;
 	int	gaps = 0;
@@ -78,12 +120,14 @@ format_article(buf_t *buf)
 	int remainder;
 	int volte_face = 0;
 
+#if 0
 	p = buf->buf_head;
 	if (*p != 0x0a)
 	{
 		buf_shift(buf, (off_t)0, 3);
 		strncpy(p, "\n\n\n", 3);
 	}
+#endif
 
 	tail = buf->buf_tail;
 	line_start = buf->buf_head;
@@ -101,6 +145,10 @@ format_article(buf_t *buf)
 
 		savep = line_start;
 
+		/*
+		 * Remove new lines occuring within our
+		 * new line length.
+		 */
 		while (1)
 		{
 			if (savep >= line_end)
@@ -111,6 +159,10 @@ format_article(buf_t *buf)
 			if (!p)
 				break;
 
+		/*
+		 * Then it's the end of a paragraph.
+		 * Leave it alone and go to 
+		 */
 			if (*(p+1) == 0x0a)
 			{
 				while (*p == 0x0a)
@@ -124,6 +176,10 @@ format_article(buf_t *buf)
 			savep = p;
 		}
 
+		/*
+		 * LINE_START + WIKI_ARTICLE_LINE_LENGTH may
+		 * happen to already be on a new line.
+		 */
 		if (*line_end == 0x0a)
 		{
 			new_line = line_end;
@@ -141,18 +197,26 @@ format_article(buf_t *buf)
 		else
 		if (line_end < tail)
 		{
+			/*
+			 * Find the nearest space backwards.
+			 */
 			while (*line_end != 0x20 && line_end > (line_start + 1))
 				--line_end;
 
 			if (line_end == line_start)
 			{
 				line_end += WIKI_ARTICLE_LINE_LENGTH;
-				buf_shift(buf, (off_t)(line_end - buf->buf_head), 1);
-				++tail;
+
+				BUF_SHIFT_SAFE(1, line_end);
+				tail = buf->buf_tail;
+
 				*line_end++ = 0x0a;
+
 				while (*line_end == 0x0a)
 					++line_end;
+
 				line_start = line_end;
+
 				continue;
 			}
 
@@ -162,13 +226,14 @@ format_article(buf_t *buf)
 		}
 
 		if (line_end >= tail)
-		{
 			line_end = new_line = tail;
-		}
 
 		line_len = (new_line - line_start);
 		delta = (WIKI_ARTICLE_LINE_LENGTH - line_len);
 
+		/*
+		 * Needs justified.
+		 */
 		if (delta > 0)
 		{
 			p = savep = line_start;
@@ -186,10 +251,10 @@ format_article(buf_t *buf)
 				while (*p == 0x20)
 					++p;
 
-				savep = p;
-
-				if (savep >= new_line)
+				if (p >= new_line)
 					break;
+
+				savep = p;
 			}
 
 			if (line_len < (WIKI_ARTICLE_LINE_LENGTH / 3))
@@ -219,20 +284,20 @@ format_article(buf_t *buf)
 					continue;
 				}
 
-				buf_shift(buf, (off_t)(p - buf->buf_head), 1);
+				BUF_SHIFT_SAFE(1, p);
+				tail = buf->buf_tail;
 				++line_end;
 				++new_line;
-				++tail;
 
 				*p++ = 0x20;
 
 				while (*p == 0x20)
 					++p;
 
-				savep = p;
-
-				if (savep >= new_line)
+				if (p >= new_line)
 					break;
+
+				savep = p;
 			}
 
 			if (remainder)
@@ -250,7 +315,7 @@ format_article(buf_t *buf)
 						if (!p)
 						{
 							left = line_start;
-							right = new_line;
+							right = (new_line - 1);
 							volte_face = 0;
 							continue;
 						}
@@ -264,18 +329,18 @@ format_article(buf_t *buf)
 						if (p == left)
 						{
 							left = line_start;
-							right = new_line;
+							right = (new_line - 1);
 							volte_face = 0;
 							continue;
 						}
 					}
 
-					buf_shift(buf, (off_t)(p - buf->buf_head), 1);
+					BUF_SHIFT_SAFE(1, p);
+					tail = buf->buf_tail;
 
 					++line_end;
 					++new_line;
 					++right;
-					++tail;
 
 					*p++ = 0x20;
 					--remainder;
