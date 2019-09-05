@@ -97,6 +97,20 @@ replace_html_entities(buf_t *buf)
 		tail = buf->buf_tail;
 	}
 
+	p = savep = buf->buf_head;
+	while(1)
+	{
+		p = strstr(savep, "&amp;");
+
+		if (!p || p >= tail)
+			break;
+
+		*p++ = '&';
+		buf_collapse(buf, (off_t)(p - buf->buf_head), 4);
+		savep = p;
+		tail = buf->buf_tail;
+	}
+
 	return;
 }
 
