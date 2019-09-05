@@ -119,7 +119,7 @@ format_article(buf_t *buf)
 {
 	assert(buf);
 
-	char *tail = buf->buf_tail;
+	char *tail = NULL;
 	char *line_start = NULL;
 	char *line_end = NULL;
 	char *p = NULL;
@@ -134,14 +134,14 @@ format_article(buf_t *buf)
 	int remainder;
 	int volte_face = 0;
 
-#if 0
 	p = buf->buf_head;
-	if (*p != 0x0a)
+	if (*p == 0x0a)
 	{
-		buf_shift(buf, (off_t)0, 3);
-		strncpy(p, "\n\n\n", 3);
+		while (*p == 0x0a && p < tail)
+			++p;
+
+		buf_collapse(buf, (off_t)0, (p - buf->buf_head));
 	}
-#endif
 
 	tail = buf->buf_tail;
 	line_start = buf->buf_head;
