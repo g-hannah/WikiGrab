@@ -86,15 +86,18 @@ extract_wiki_article(buf_t *buf)
 	buf_t copy_buf;
 	http_header_t *server;
 	http_header_t *date;
+	http_header_t *lastmod;
 	size_t range;
 	static char scratch_buf[DEFAULT_MAX_LINE_SIZE];
 	char *home;
 
 	server = (http_header_t *)wiki_cache_alloc(http_hcache);
 	date = (http_header_t *)wiki_cache_alloc(http_hcache);
+	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache);
 
 	assert(wiki_cache_obj_used(http_hcache, (void *)server));
 	assert(wiki_cache_obj_used(http_hcache, (void *)date));
+	assert(wiki_cache_obj_used(http_hcache, (void *)lastmod));
 
 	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
 	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
@@ -156,7 +159,7 @@ extract_wiki_article(buf_t *buf)
 	buf_clear(&content_buf);
 
 	buf_append(&content_buf, "      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
-	buf_append(&content_buf, "                      Grabbed by WikiGrab v");
+	buf_append(&content_buf, "                   Downloaded via WikiGrab v");
 	buf_append(&content_buf, WIKIGRAB_BUILD);
 	buf_append(&content_buf, "\n\n");
 	buf_append(&content_buf, "      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n");
@@ -172,6 +175,7 @@ extract_wiki_article(buf_t *buf)
 
 	http_fetch_header(buf, "Server", server, (off_t)0);
 	http_fetch_header(buf, "Date", date, (off_t)0);
+	http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0);
 
 	if (date->value[0])
 	{
@@ -180,6 +184,15 @@ extract_wiki_article(buf_t *buf)
 		date->value[date->vlen++] = 0x0a;
 		date->value[date->vlen] = 0;
 		write(out_fd, date->value, date->vlen);
+	}
+
+	if (lastmod->value[0])
+	{
+		sprintf(scratch_buf, "%*s", LEFT_ALIGN_WIDTH, "Last-modified: ");
+		write(out_fd, scratch_buf, strlen(scratch_buf));
+		lastmod->value[lastmod->vlen++] = 0x0a;
+		lastmod->value[lastmod->vlen] = 0;
+		write(out_fd, lastmod->value, lastmod->vlen);
 	}
 
 	if (server->value[0])
@@ -214,10 +227,10 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&content_buf, "\n      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n");
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 
-	/*
-	 * Get the paragraphs of the text.
-	 */
 
+/*
+ * BEGIN PARSING THE TEXT FROM THE ARTICLE.
+ */
 	RESET();
 	p = strstr(savep, "\"mw-content-text\"");
 	if (!p)
@@ -225,9 +238,11 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 	savep = p;
+
 	while (1)
 	{
 		p = strstr(savep, "<p");
+
 		if (!p)
 			break;
 
@@ -262,7 +277,10 @@ extract_wiki_article(buf_t *buf)
 
 			p = memchr(savep, '>', (tail - savep));
 
-			++p;
+			if (!p)
+				p = tail;
+			else
+				++p;
 
 			range = (p - savep);
 #ifdef DEBUG
@@ -290,17 +308,17 @@ extract_wiki_article(buf_t *buf)
 		p = strstr(savep, "&#93;");
 
 		if (!p)
-			break;
-
-		p += strlen("&#93;");
+			p = (savep + strlen("&#91;"));
+		else
+			p += strlen("&#93;");
 
 		range = (p - savep);
 #ifdef DEBUG
 		printf("removing %.*s\n", (int)range, savep);
 #endif
 		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-		p = savep;
 		tail = content_buf.buf_tail;
+		p = savep;
 	}
 
 	p = savep = content_buf.buf_head;
@@ -319,9 +337,9 @@ extract_wiki_article(buf_t *buf)
 		p = memchr(savep, ';', (tail - savep));
 
 		if (!p)
-			break;
-
-		++p;
+			p = (savep + 1);
+		else
+			++p;
 
 		range = (p - savep);
 #ifdef DEBUG
@@ -356,12 +374,12 @@ extract_wiki_article(buf_t *buf)
 
 		buf_append_ex(&copy_buf, p, range);
 
-		if ((*(q-1) == 0x2e)
-		|| (*(q-1) == ')' && *(q-2) == 0x2e)
+		if ((*(q-1) == 0x2e) /* End of a line */
+		|| (*(q-1) == ')' && *(q-2) == 0x2e) /* End of line in parenthesis */
 		|| strstr(copy_buf.buf_head, "&lt;")
 		|| strstr(copy_buf.buf_head, "&gt;")
 		|| strstr(copy_buf.buf_head, "&quot;")
-		|| (isdigit(*(savep-1)) && isdigit(*(savep+1)))
+		|| (isdigit(*(savep-1)) && isdigit(*(savep+1))) /* e.g., "Version 2.0" */
 		|| (!memchr(p, '-', range)
 		&& !memchr(p, '{', range)
 		&& !memchr(p, '}', range)
@@ -385,6 +403,7 @@ extract_wiki_article(buf_t *buf)
 
 	buf_destroy(&copy_buf);
 
+#if 0
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
 	while(1)
@@ -438,12 +457,16 @@ extract_wiki_article(buf_t *buf)
 			savep = ++p;
 		}
 	}
+#endif
 
 	p = savep = content_buf.buf_head;
 	tail = content_buf.buf_tail;
 
 	while(1)
 	{
+		if (savep >= tail)
+			break;
+
 		p = memchr(savep, 0x20, (tail - savep));
 
 		if (!p)
@@ -475,19 +498,11 @@ extract_wiki_article(buf_t *buf)
 	}
 
 	if (option_set(OPT_OUT_TTY))
-		write(STDOUT_FILENO, content_buf.buf_head, content_buf.data_len);
+		buf_write_fd(STDOUT_FILENO, &content_buf);
 
 	assert((content_buf.buf_tail - content_buf.buf_head) == content_buf.data_len);
 
-#ifdef DEBUG
-	buf_write_fd(STDOUT_FILENO, &content_buf);
-#endif
-
 	format_article(&content_buf);
-
-#ifdef DEBUG
-	buf_write_fd(STDOUT_FILENO, &content_buf);
-#endif
 
 	write(out_fd, content_buf.buf_head, content_buf.data_len);
 	close(out_fd);
@@ -495,6 +510,7 @@ extract_wiki_article(buf_t *buf)
 
 	wiki_cache_dealloc(http_hcache, (void *)server);
 	wiki_cache_dealloc(http_hcache, (void *)date);
+	wiki_cache_dealloc(http_hcache, (void *)lastmod);
 
 	if (option_set(OPT_OPEN_FINISH))
 	{
@@ -523,5 +539,6 @@ extract_wiki_article(buf_t *buf)
 
 	wiki_cache_dealloc(http_hcache, (void *)server);
 	wiki_cache_dealloc(http_hcache, (void *)date);
+	wiki_cache_dealloc(http_hcache, (void *)lastmod);
 	return -1;
 }
