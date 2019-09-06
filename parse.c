@@ -10,76 +10,637 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "buffer.h"
-#include "format.h"
 #include "http.h"
 #include "parse.h"
 #include "wikigrab.h"
 
-#if 0
-/**
- * Copy contents of HTML tag into buffer - append LF
- */
-#define GET_TAG_CONTENT(tag, p, s, t)\
-do {\
-	buf_clear(&content_buf);\
-	(p) = strstr((s), (tag));\
-	if ((p))\
-	{\
-		(s) = (p);\
-		(p) = memchr((s), 0x3e, (t) - (s));\
-		if ((p))\
-		{\
-			++(p);\
-			(s) = (p);\
-			(p) = memchr((s), 0x3c, (t) - (s));\
-			if (!(p))\
-				return -1;\
-			buf_append_ex(&content_buf, (s), ((p) - (s)));\
-			buf_append_ex(&content_buf, "\n", 1);\
-			++(p);\
-			(s) = (p)++;\
-		}\
-	}\
-	else\
-		(p) = (s);\
-} while(0)
+int
+value_cache_ctor(void *obj)
+{
+	assert(obj);
 
-#define GET_INTAG_CONTENT(tag, name, p, s, t)\
-do {\
-	buf_clear(&content_buf);\
-	(p) = strstr((s), (tag));\
-	if ((p))\
-	{\
-		(s) = (p);\
-		(p) = strstr((s), (name));\
-		if ((p))\
-		{\
-			(s) = (p);\
-			(p) = memchr((s), '"', (t) - (s));\
-			if (!(p))\
-				goto out_destroy_file;\
-			++(p);\
-			(s) = (p);\
-			(p) = memchr((s), '"', (t) - (s));\
-			if (!(p))\
-				goto out_destroy_file;\
-			buf_append_ex(&content_buf, (s), ((p) - (s)));\
-			buf_append_ex(&content_buf, "\n", 1);\
-			++(p);\
-			(s) = (p)++;\
-		}\
-	}\
-	else\
-		(p) = (s);\
-} while(0)
-#endif
+	value_t *val = (value_t *)obj;
+	if (!(val->value = calloc(MAX_VALUE_LEN+1, 1)))
+		return -1;
+
+	val->vlen = 0;
+
+	return 0;
+}
+
+void
+value_cache_dtor(void *obj)
+{
+	assert(obj);
+
+	value_t *val = (value_t *)obj;
+
+	if (val->value)
+		free(val->value);
+
+	val->value = NULL;
+
+	return;
+}
 
 #define RESET() (p = savep = buf->buf_head)
 
+static void
+__remove_html_tags(buf_t *buf)
+{
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	savep = buf->buf_head;
+
+	p = memchr(savep, 0x3c, (tail - savep));
+
+	if (!p)
+		return;
+
+	while(*p == 0x3c)
+	{
+		savep = p;
+
+		p = memchr(savep, 0x3e, (tail - savep));
+
+		if (!p)
+			break;
+
+		++p;
+
+		range = (p - savep);
+
+		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+		p = savep;
+		tail = buf->buf_tail;
+	}
+
+	return;
+}
+
+static void
+__remove_inline_refs(buf_t *buf)
+{
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	p = savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, "&#91;");
+
+		if (!p || p >= tail)
+			break;
+
+		savep = p;
+
+		p = strstr(savep, "&#93;");
+
+		if (!p)
+			p = (savep + strlen("&#91;"));
+		else
+			p += strlen("&#93;");
+
+		range = (p - savep);
+#ifdef DEBUG
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
+#endif
+		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+		tail = buf->buf_tail;
+		p = savep;
+	}
+}
+
+static void
+__remove_html_encodings(buf_t *buf)
+{
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	p = savep = buf->buf_tail;
+
+	while(1)
+	{
+		p = strstr(savep, "&#");
+
+		if (!p)
+			break;
+
+		*p++ = 0x20;
+
+		savep = p;
+
+		p = memchr(savep, ';', (tail - savep));
+
+		if (!p)
+			p = (savep + 1);
+		else
+			++p;
+
+		range = (p - savep);
+#ifdef DEBUG
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
+#endif
+		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+		p = savep;
+		tail = buf->buf_tail;
+	}
+}
+
+struct html_entity_t
+{
+	char *entity;
+	char _char;
+};
+
+struct html_entity_t HTML_ENTS[5] =
+{
+	{ "&quot;", 0x22 },
+	{ "&amp;", 0x26 },
+	{ "&lt;", 0x3c },
+	{ "&gt;", 0x3e },
+	{ (char *)NULL, 0 }
+};
+
+static void
+__replace_html_entities(buf_t *buf)
+{
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+	size_t len;
+	int i;
+
+	if (option_set(OPT_FORMAT_XML))
+		return;
+
+	for (i = 0; HTML_ENTS[i].entity != NULL; ++i)
+	{
+		p = savep = buf->buf_head;
+
+		while (1)
+		{
+			p = strstr(savep, HTML_ENTS[i].entity);
+			len = strlen(HTML_ENTS[i].entity - 1);
+
+			if (!p || p >= tail)
+				break;
+
+			*p++ = HTML_ENTS[i]._char;
+			buf_collapse(buf, (off_t)(p - buf->buf_head), len);
+			savep = p;
+			tail = buf->buf_tail;
+		}
+	}
+	return;
+}
+
+static void
+__remove_garbage(buf_t *buf)
+{
+	buf_t copy_buf;
+	char *p;
+	char *q;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
+	p = savep = buf->buf_head;
+
+	while(1)
+	{
+		p = memchr(savep, 0x2e, (tail - savep));
+
+		if (!p)
+			break;
+
+		savep = p;
+		while (!isspace(*p))
+			--p;
+
+		q = savep;
+		while (!isspace(*q))
+			++q;
+
+		range = (q - p);
+
+		buf_append_ex(&copy_buf, p, range);
+
+		if ((*(q-1) == 0x2e) /* End of a line */
+		|| (*(q-1) == ')' && *(q-2) == 0x2e) /* End of line in parenthesis */
+		|| strstr(copy_buf.buf_head, "&lt;")
+		|| strstr(copy_buf.buf_head, "&gt;")
+		|| strstr(copy_buf.buf_head, "&quot;")
+		|| (isdigit(*(savep-1)) && isdigit(*(savep+1))) /* e.g., "Version 2.0" */
+		|| (!memchr(p, '-', range)
+		&& !memchr(p, '{', range)
+		&& !memchr(p, '}', range)
+		&& !memchr(p, '#', range)
+		&& !memchr(p, ';', range)
+		&& !memchr(p, '(', range)
+		&& !memchr(p, ')', range)
+		&& !memchr(p, '-', range)))
+		{
+			p = savep = q;
+			continue;
+		}
+
+#ifdef DEBUG
+		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
+#endif
+		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
+		savep = p;
+		tail = buf->buf_tail;
+	}
+
+	buf_destroy(&copy_buf);
+
+	return;
+}
+
+/*
+ * buf_shift() could require extending the buffer,
+ * and this in turn could result in our data
+ * being copied to somewhere else in the heap.
+ * So save all the offsets and restore them
+ * after the shift.
+ */
+#define BUF_SHIFT_SAFE(by, optr)\
+do {\
+	size_t __lstart_off;\
+	size_t __lend_off;\
+	size_t __nloff;\
+	size_t __rightoff;\
+	size_t __poff;\
+	size_t __spoff;\
+	if (line_start)\
+		__lstart_off = (line_start - buf->buf_head);\
+	if (line_end)\
+		__lend_off = (line_end - buf->buf_head);\
+	if (new_line)\
+		__nloff = (new_line - buf->buf_head);\
+	if (right)\
+		__rightoff = (right - buf->buf_head);\
+	if (p)\
+		__poff = (p - buf->buf_head);\
+	if (savep)\
+		__spoff = (savep - buf->buf_head);\
+	buf_shift(buf, (off_t)((optr) - buf->buf_head), (by));\
+	if (line_start)\
+		line_start = (buf->buf_head + __lstart_off);\
+	if (line_end)\
+		line_end = (buf->buf_head + __lend_off);\
+	if (new_line)\
+		new_line = (buf->buf_head + __nloff);\
+	if (right)\
+		right = (buf->buf_head + __rightoff);\
+	if (p)\
+		p = (buf->buf_head + __poff);\
+	if (savep)\
+		savep = (buf->buf_head + __spoff);\
+} while(0)
+
+static int
+__do_format_txt(buf_t *buf)
+{
+	assert(buf);
+
+	char *tail = NULL;
+	char *line_start = NULL;
+	char *line_end = NULL;
+	char *p = NULL;
+	char *savep = NULL;
+	char *left = NULL;
+	char *right = NULL;
+	char *new_line = NULL;
+	size_t line_len;
+	size_t delta;
+	int	gaps = 0;
+	int passes;
+	int remainder;
+	int volte_face = 0;
+
+	p = buf->buf_head;
+	if (*p == 0x0a)
+	{
+		while (*p == 0x0a && p < tail)
+			++p;
+
+		buf_collapse(buf, (off_t)0, (p - buf->buf_head));
+	}
+
+	tail = buf->buf_tail;
+	line_start = buf->buf_head;
+
+	while (1)
+	{
+		outer_loop_begin:
+		line_end = (line_start + WIKI_ARTICLE_LINE_LENGTH);
+
+		if (line_end > tail)
+			line_end = tail;
+
+		if (line_start >= line_end)
+			break;
+
+		savep = line_start;
+
+		/*
+		 * Remove new lines occuring within our
+		 * new line length.
+		 */
+		while (1)
+		{
+			if (savep >= line_end)
+				break;
+
+			p = memchr(savep, 0x0a, (line_end - savep));
+
+			if (!p)
+				break;
+
+		/*
+		 * Then it's the end of a paragraph.
+		 * Leave it alone and go to 
+		 */
+			if (*(p+1) == 0x0a)
+			{
+				while (*p == 0x0a)
+					++p;
+
+				line_start = savep = p;
+				goto outer_loop_begin;
+			}
+
+			*p++ = 0x20;
+			savep = p;
+		}
+
+		/*
+		 * LINE_START + WIKI_ARTICLE_LINE_LENGTH may
+		 * happen to already be on a new line.
+		 */
+		if (*line_end == 0x0a)
+		{
+			new_line = line_end;
+
+			while (*line_end == 0x0a)
+				++line_end;
+		}
+		else
+		if (*line_end == 0x20)
+		{
+			new_line = line_end;
+
+			*line_end++ = 0x0a;
+		}
+		else
+		if (line_end < tail)
+		{
+			/*
+			 * Find the nearest space backwards.
+			 */
+			while (*line_end != 0x20 && line_end > (line_start + 1))
+				--line_end;
+
+			if (line_end == line_start)
+			{
+				line_end += WIKI_ARTICLE_LINE_LENGTH;
+
+				BUF_SHIFT_SAFE(1, line_end);
+				tail = buf->buf_tail;
+
+				*line_end++ = 0x0a;
+
+				while (*line_end == 0x0a)
+					++line_end;
+
+				line_start = line_end;
+
+				continue;
+			}
+
+			new_line = line_end;
+
+			*line_end++ = 0x0a;
+		}
+
+		if (line_end >= tail)
+			line_end = new_line = tail;
+
+		line_len = (new_line - line_start);
+		delta = (WIKI_ARTICLE_LINE_LENGTH - line_len);
+
+		/*
+		 * Needs justified.
+		 */
+		if (delta > 0)
+		{
+			p = savep = line_start;
+			gaps = 0;
+
+			while (1)
+			{
+				p = memchr(savep, 0x20, (new_line - savep));
+
+				if (!p)
+					break;
+
+				++gaps;
+
+				while (*p == 0x20)
+					++p;
+
+				if (p >= new_line)
+					break;
+
+				savep = p;
+			}
+
+			if (line_len < (WIKI_ARTICLE_LINE_LENGTH / 3))
+			{
+				line_start = line_end;
+				continue;
+			}
+
+			if (!gaps)
+			{
+				line_start = line_end;
+				continue;
+			}
+
+			passes = (delta / gaps);
+			remainder = (delta % gaps);
+
+			p = savep = line_start;
+			while (passes > 0)
+			{
+				p = memchr(savep, 0x20, (new_line - savep));
+
+				if (!p)
+				{
+					--passes;
+					p = savep = line_start;
+					continue;
+				}
+
+				BUF_SHIFT_SAFE(1, p);
+				tail = buf->buf_tail;
+				++line_end;
+				++new_line;
+
+				*p++ = 0x20;
+
+				while (*p == 0x20)
+					++p;
+
+				if (p >= new_line)
+					break;
+
+				savep = p;
+			}
+
+			if (remainder)
+			{
+				left = line_start;
+				right = new_line;
+				volte_face = 0;
+
+				while (remainder)
+				{
+					if (!volte_face)
+					{
+						p = memchr(left, 0x20, (right - left));
+
+						if (!p)
+						{
+							left = line_start;
+							right = (new_line - 1);
+							volte_face = 0;
+							continue;
+						}
+					}
+					else
+					{
+						p = right;
+						while (*p != 0x20 && p > left)
+							--p;
+
+						if (p == left)
+						{
+							left = line_start;
+							right = (new_line - 1);
+							volte_face = 0;
+							continue;
+						}
+					}
+
+					BUF_SHIFT_SAFE(1, p);
+					tail = buf->buf_tail;
+
+					++line_end;
+					++new_line;
+					++right;
+
+					*p++ = 0x20;
+					--remainder;
+
+					if (!volte_face)
+					{
+						while (*p == 0x20)
+							++p;
+
+						left = p;
+
+						volte_face = 1;
+					}
+					else
+					{
+						while (*p == 0x20)
+							--p;
+
+						right = p;
+
+						volte_face = 0;
+					}
+				} /* while(remainder) */
+			} /* if (remainder) */
+		} /* if (delta > 0) */
+
+		line_start = line_end;
+
+		if (line_end == tail)
+			break;
+	} /* while(1) */
+
+	__replace_html_entities(buf);
+
+	return 0;
+}
+
+static void
+__do_format_json(buf_t *buf)
+{
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	p = savep = buf->buf_head;
+
+	while(1)
+	{
+		p = memchr(savep, 0x22, (tail - savep));
+
+		if (!p)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), (size_t)1);
+		*p++ = '/';
+
+		savep = ++p;
+		tail = buf->buf_tail;
+	}
+
+	p = savep = buf->buf_head;
+	while(1)
+	{
+		p = memchr(savep, 0x0a, (tail - savep));
+
+		if (!p)
+			break;
+
+		savep = p;
+
+		while (*p == 0x0a)
+			*p++ = 0x20;
+
+		range = (p - savep);
+
+		if (range > 1)
+		{
+			++savep;
+
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), (p - savep));
+			p = savep;
+			tail = buf->buf_tail;
+		}
+	}
+}
+
 static char tag_content[8192];
 
-char *
-get_tag_content(buf_t *buf, const char *tag)
+static char *
+__get_tag_content(buf_t *buf, const char *tag)
 {
 	assert(buf);
 	assert(tag);
@@ -113,8 +674,8 @@ get_tag_content(buf_t *buf, const char *tag)
 	return tag_content;
 }
 
-char *
-get_tag_field(buf_t *buf, const char *tag, const char *field)
+static char *
+__get_tag_field(buf_t *buf, const char *tag, const char *field)
 {
 	assert(buf);
 	assert(tag);
@@ -156,8 +717,8 @@ get_tag_field(buf_t *buf, const char *tag, const char *field)
 	return tag_content;
 }
 
-int
-remove_braces(buf_t *buf)
+static int
+__remove_braces(buf_t *buf)
 {
 	assert(buf);
 
@@ -271,17 +832,13 @@ remove_braces(buf_t *buf)
 	return 0;
 }
 
-void
-normalise_file_title(buf_t *buf)
+static void
+__normalise_file_title(buf_t *buf)
 {
 	assert(buf);
 
 	char *tail = buf->buf_tail;
 	char *p = buf->buf_head;
-
-	p = strstr(buf->buf_head, " - Wikipedia");
-	if (p)
-		buf_collapse(buf, (off_t)(p - buf->buf_head), (buf->buf_tail - p));
 
 	p = buf->buf_head;
 	while (p < tail)
@@ -321,42 +878,74 @@ int
 extract_wiki_article(buf_t *buf)
 {
 	int out_fd = -1;
-	char *tail = buf->buf_tail;
 	char *p;
-	char *q;
 	char *savep;
-	//char *saveq;
 	buf_t file_title;
 	buf_t content_buf;
-	buf_t tmp_buf;
-	buf_t copy_buf;
 	http_header_t *server;
 	http_header_t *date;
 	http_header_t *lastmod;
-	size_t range;
-	//static char scratch_buf[DEFAULT_MAX_LINE_SIZE];
 	static char inet6_string[INET6_ADDRSTRLEN];
-	char *large_buffer = NULL;
+	char *buffer = NULL;
 	char *home;
 	struct sockaddr_in sock4;
 	struct sockaddr_in6 sock6;
 	struct addrinfo *ainf = NULL;
 	struct addrinfo *aip = NULL;
-	//int gotv4 = 0;
+	int gotv4 = 0;
 	int gotv6 = 0;
+	wiki_cache_t *value_cache = NULL;
+	struct article_header article_header;
+	size_t vlen;
 
-	large_buffer = calloc(8192, 1);
+	if (!(buffer = calloc(DEFAULT_TMP_BUF_SIZE, 1)))
+		goto fail;
 
+	clear_struct(&article_header);
+
+	/*
+	 * Extract data for display
+	 * at top of the article.
+	 */
+	value_cache = wiki_cache_create(
+			"value_cache",
+			sizeof(value_t),
+			0,
+			value_cache_ctor,
+			value_cache_dtor);
+
+	article_header.title = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.server_name = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.server_ipv4 = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.server_ipv6 = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.generator = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.lastmod = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.downloaded = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.content_len = (value_t *)wiki_cache_alloc(value_cache);
+
+	/* Extract these values from the HTTP response header */
 	server = (http_header_t *)wiki_cache_alloc(http_hcache);
 	date = (http_header_t *)wiki_cache_alloc(http_hcache);
 	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache);
 
-	assert(wiki_cache_obj_used(http_hcache, (void *)server));
-	assert(wiki_cache_obj_used(http_hcache, (void *)date));
-	assert(wiki_cache_obj_used(http_hcache, (void *)lastmod));
+	http_fetch_header(buf, "Server", server, (off_t)0);
+	http_fetch_header(buf, "Date", date, (off_t)0);
+	http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0);
+
+	strcpy(article_header.server_name->value, server->value);
+	article_header.server_name->vlen = server->vlen;
+
+	strcpy(article_header.downloaded->value, date->value);
+	article_header.downloaded->vlen = date->vlen;
+
+	strcpy(article_header.lastmod->value, lastmod->value);
+	article_header.lastmod->vlen = lastmod->vlen;
+
+	wiki_cache_dealloc(http_hcache, (void *)server);
+	wiki_cache_dealloc(http_hcache, (void *)date);
+	wiki_cache_dealloc(http_hcache, (void *)lastmod);
 
 	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
-	buf_init(&tmp_buf, DEFAULT_TMP_BUF_SIZE);
 	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
 
 	home = getenv("HOME");
@@ -364,24 +953,32 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&file_title, WIKIGRAB_DIR);
 	buf_append(&file_title, "/");
 
-	get_tag_content(buf, "<title");
+	__get_tag_content(buf, "<title");
 	buf_append(&file_title, tag_content);
-	buf_append(&tmp_buf, tag_content);
-	normalise_file_title(&file_title);
+	buf_snip(&file_title, strlen(" - Wikipedia"));
+
+	vlen = strlen(tag_content);
+	strncpy(article_header.title->value, tag_content, vlen);
+	article_header.title->value[vlen] = 0;
+	article_header.title->vlen = vlen;
+
+	/*
+	 * Replace spaces (and any non-underscore non-ascii chars) with underscores.
+	 */
+	__normalise_file_title(&file_title);
+
+	__get_tag_field(buf, "<meta name=\"generator\"", "content");
+
+	vlen = strlen(tag_content);
+	strncpy(article_header.generator->value, tag_content, vlen);
+	article_header.generator->value[vlen] = 0;
+	article_header.generator->vlen = vlen;
 
 	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
 		goto out_destroy_bufs;
 
-	http_fetch_header(buf, "Server", server, (off_t)0);
-	http_fetch_header(buf, "Date", date, (off_t)0);
-	http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0);
-
 	if (server->value[0])
 	{
-		/*
-		 * Get IP address(es) of server.
-		 */
-
 		clear_struct(&sock4);
 		clear_struct(&sock6);
 
@@ -394,7 +991,7 @@ extract_wiki_article(buf_t *buf)
 				&& aip->ai_family == AF_INET)
 				{
 					memcpy(&sock4, aip->ai_addr, aip->ai_addrlen);
-					//gotv4 = 1;
+					gotv4 = 1;
 					break;
 				}
 			}
@@ -411,65 +1008,23 @@ extract_wiki_article(buf_t *buf)
 		}
 	}
 
+	if (gotv4)
+		strcpy(article_header.server_ipv4->value, inet_ntoa(sock4.sin_addr));
+	else
+		strcpy(article_header.server_ipv4->value, "None");
+
 	if (gotv6)
-		inet_ntop(AF_INET6, sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN);
+		strcpy(article_header.server_ipv6->value, inet_ntop(AF_INET6, sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN));
 	else
-		inet6_string[0] = 0;
+		strcpy(article_header.server_ipv6->value, "None");
 
-	if (option_set(OPT_FORMAT_XML))
-	{
-		sprintf(large_buffer,
-			"<?xml version=\"1.0\" ?>\n"
-			"<wiki>\n"
-			"<metadata>\n"
-			"<meta name=\"Title\" content=\"%s\"/>\n"
-			"<meta name=\"Parser\" content=\"WikiGrab v%s\"/>\n"
-			"<meta name=\"Server\" content=\"%s\"/>\n"
-			"<meta name=\"Server-ipv4\" content=\"%s\"/>\n"
-			"<meta name=\"Server-ipv6\" content=\"%s\"/>\n"
-			"<meta name=\"Modified\" content=\"%s\"/>\n"
-			"<meta name=\"Downloaded\" content=\"%s\"/>\n"
-			"</metadata>",
-			tmp_buf.buf_head,
-			WIKIGRAB_BUILD,
-			server->value,
-			inet_ntoa(sock4.sin_addr),
-			inet6_string[0] ? inet6_string : "none",
-			lastmod->value,
-			date->value);
-	}
-	else
-	if (option_set(OPT_FORMAT_TXT))
-	{
-		sprintf(large_buffer,
-			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n"
-			"                    Downloaded via WikiGrab v%s\n\n"
-			"      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n\n"
-			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
-			WIKIGRAB_BUILD,
-			LEFT_ALIGN_WIDTH, "Title: ", tmp_buf.buf_head,
-			LEFT_ALIGN_WIDTH, "Served-by: ", server->value,
-			LEFT_ALIGN_WIDTH, "Server-ip-v4: ", inet_ntoa(sock4.sin_addr),
-			LEFT_ALIGN_WIDTH, "Server-ip-v6: ", inet6_string,
-			LEFT_ALIGN_WIDTH, "Last-modified: ", lastmod->value,
-			LEFT_ALIGN_WIDTH, "Downloaded: ", date->value);
-	}
-
-	write(out_fd, large_buffer, strlen(large_buffer));
 	buf_clear(&content_buf);
-
 
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
 
-	remove_braces(buf);
+	__remove_braces(buf);
 
 	RESET();
 	p = strstr(savep, "\"mw-content-text\"");
@@ -478,8 +1033,11 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 
-	savep = p;
+	p = savep = content_buf.buf_head;
 
+	/*
+	 * Copy everything between <p></p> tags.
+	 */
 	while (1)
 	{
 		p = strstr(savep, "<p");
@@ -493,240 +1051,176 @@ extract_wiki_article(buf_t *buf)
 		if (!p)
 			break;
 
-		buf_append(&content_buf, "BEGIN_PARA");
+		if (option_set(OPT_FORMAT_XML))
+			buf_append(&content_buf, BEGIN_PARA_MARK);
+
 		buf_append_ex(&content_buf, savep, (p - savep));
-		buf_append(&content_buf, "END_PARA");
+
+		if (option_set(OPT_FORMAT_XML))
+			buf_append(&content_buf, END_PARA_MARK);
+
 		buf_append(&content_buf, "\n");
 
 		savep = p;
 	}
 
-
-	p = savep = content_buf.buf_head;
-	tail = content_buf.buf_tail;
+	__remove_html_tags(&content_buf);
+	__remove_inline_refs(&content_buf);
+	__remove_html_encodings(&content_buf);
+	__replace_html_entities(&content_buf);
+	__remove_garbage(&content_buf);
 
 	/*
-	 * Remove all the HTML tags.
+	 * Replace the _BEGIN_PARA_ and _END_PARA_
+	 * with <paragraph> and </paragraph>
+	 * respectively.
 	 */
-	while(1)
+	if (option_set(OPT_FORMAT_XML))
 	{
-		p = memchr(savep, '<', (tail - savep));
+		static char *opener = "<paragraph>";
+		static char *closer = "</paragraph>\n\n";
+		size_t omark_len = strlen(BEGIN_PARA_MARK);
+		size_t cmark_len = strlen(END_PARA_MARK);
+		size_t opener_len = strlen(opener);
+		size_t closer_len = strlen(closer);
+		ssize_t shift = 0;
 
-		if (!p)
-			break;
-
-		while (*p == '<')
+		p = savep = content_buf.buf_head;
+		while(1)
 		{
-			savep = p;
-
-			p = memchr(savep, '>', (tail - savep));
+			p = strstr(savep, BEGIN_PARA_MARK);
 
 			if (!p)
-				p = tail;
-			else
-				++p;
+				break;
 
-			range = (p - savep);
-#ifdef DEBUG
-			printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-			p = savep;
-			tail = content_buf.buf_tail;
-		}
-	}
+			shift = (opener_len - omark_len);
 
-	if (option_set(OPT_FORMAT_XML))
-	{
-		buf_shift(&content_buf, (off_t)0, strlen("<text>\n"));
-		strncpy(content_buf.buf_head, "<text>\n", strlen("<text>\n"));
-	}
+			if (shift > 0)
+				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), shift);
 
-	/*
-	 * Remove reference numbers (i.e., "[55]").
-	 */
-	p = savep = content_buf.buf_head;
-	while(1)
-	{
-		p = strstr(savep, "&#91;");
+			strncpy(p, opener, opener_len);
 
-		if (!p)
-			break;
+			p += opener_len;
 
-		savep = p;
+			if (shift < 0)
+				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)(0 - shift));
 
-		p = strstr(savep, "&#93;");
+			savep = p;
 
-		if (!p)
-			p = (savep + strlen("&#91;"));
-		else
-			p += strlen("&#93;");
+			p = strstr(savep, END_PARA_MARK);
 
-		range = (p - savep);
-#ifdef DEBUG
-		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-		tail = content_buf.buf_tail;
-		p = savep;
-	}
+			shift = (closer_len - cmark_len);
 
-	p = savep = content_buf.buf_head;
-	tail = content_buf.buf_tail;
-	while(1)
-	{
-		p = strstr(savep, "&#");
+			if (shift > 0)
+				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)shift);
 
-		if (!p)
-			break;
+			strncpy(p, closer, closer_len);
 
-		*p++ = 0x20;
+			p += closer_len;
 
-		savep = p;
+			if (shift < 0)
+				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)(0 - shift));
 
-		p = memchr(savep, ';', (tail - savep));
-
-		if (!p)
-			p = (savep + 1);
-		else
-			++p;
-
-		range = (p - savep);
-#ifdef DEBUG
-		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-		buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-		p = savep;
-		tail = content_buf.buf_tail;
-	}
-
-	p = savep = content_buf.buf_head;
-	tail = content_buf.buf_tail;
-
-	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
-
-	while(1)
-	{
-		p = memchr(savep, 0x2e, (tail - savep));
-
-		if (!p)
-			break;
-
-		savep = p;
-		while (!isspace(*p))
-			--p;
-
-		q = savep;
-		while (!isspace(*q))
-			++q;
-
-		range = (q - p);
-
-		buf_append_ex(&copy_buf, p, range);
-
-		if ((*(q-1) == 0x2e) /* End of a line */
-		|| (*(q-1) == ')' && *(q-2) == 0x2e) /* End of line in parenthesis */
-		|| strstr(copy_buf.buf_head, "&lt;")
-		|| strstr(copy_buf.buf_head, "&gt;")
-		|| strstr(copy_buf.buf_head, "&quot;")
-		|| (isdigit(*(savep-1)) && isdigit(*(savep+1))) /* e.g., "Version 2.0" */
-		|| (!memchr(p, '-', range)
-		&& !memchr(p, '{', range)
-		&& !memchr(p, '}', range)
-		&& !memchr(p, '#', range)
-		&& !memchr(p, ';', range)
-		&& !memchr(p, '(', range)
-		&& !memchr(p, ')', range)
-		&& !memchr(p, '-', range)))
-		{
-			p = savep = q;
-			continue;
-		}
-
-#ifdef DEBUG
-		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), range);
-		savep = p;
-		tail = content_buf.buf_tail;
-	}
-
-	buf_destroy(&copy_buf);
-
-	p = savep = content_buf.buf_head;
-	tail = content_buf.buf_tail;
-
-	while(1)
-	{
-		if (savep >= tail)
-			break;
-
-		p = memchr(savep, 0x20, (tail - savep));
-
-		if (!p)
-			break;
-
-		savep = p;
-
-		while (*p == 0x20)
-			++p;
-
-		range = (p - savep);
-
-		if (range > 1)
-		{
-			++savep;
-
-			range = (p - savep);
-#ifdef DEBUG
-			printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-			buf_collapse(&content_buf, (off_t)(savep - content_buf.buf_head), range);
-			p = savep;
-			tail = content_buf.buf_tail;
-		}
-		else
-		{
 			savep = p;
 		}
 	}
 
-	p = savep = content_buf.buf_head;
-	while(1)
-	{
-		p = strstr(savep, "BEGIN_PARA");
-		if (!p)
-			break;
-
-		strncpy(p, "<p>", 3);
-		p += 3;
-		savep = p;
-		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (strlen("BEGIN_PARA") - 3));
-
-		p = strstr(savep, "END_PARA");
-		strncpy(p, "</p>\n\n", strlen("</p>\n\n"));
-		p += strlen("</p>\n\n");
-		savep = p;
-		buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (strlen("END_PARA") - strlen("</p>\n\n")));
-	}
-
-	if (option_set(OPT_OUT_TTY))
-		buf_write_fd(STDOUT_FILENO, &content_buf);
-
-	assert((content_buf.buf_tail - content_buf.buf_head) == content_buf.data_len);
-
-	format_article(&content_buf);
+	sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
+	article_header.content_len->vlen = strlen(article_header.content_len->value);
 
 	if (option_set(OPT_FORMAT_XML))
-		buf_append(&content_buf, "</text>\n</wiki>\n");
+	{
+		sprintf(buffer,
+			"%s\n"
+			"<wiki>\n"
+			"\t<metadata>\n"
+			"\t\t<meta name=\"Title\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Parser\" content=\"WikiGrab v%s\"/>\n"
+			"\t\t<meta name=\"Server\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Server-ipv4\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Server-ipv6\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Generator\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Modified\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Downloaded\" content=\"%s\"/>\n"
+			"\t\t<meta name=\"Length\" content=\"%s\"/>\n"
+			"\t</metadata>\n"
+			"\t<text>\n",
+			XML_START_LINE,
+			article_header.title->value,
+			WIKIGRAB_BUILD,
+			article_header.server_name->value,
+			article_header.server_ipv4->value,
+			article_header.server_ipv6->value,
+			article_header.generator->value,
+			article_header.lastmod->value,
+			article_header.downloaded->value,
+			article_header.content_len->value);
 
+			buf_append(&content_buf, "</text>\n</wiki>\n");
+	}
+	else
+	if (option_set(OPT_FORMAT_JSON))
+	{
+		sprintf(buffer,
+			"{\n"
+			"\t\"Title\": \"%s\",\n"
+			"\t\"Parser\": \"WikiGrab v%s\",\n"
+			"\t\"Server\": {\n"
+			"\t\t\t\"Name\": \"%s\",\n"
+			"\t\t\t\"IPV4\": \"%s\",\n"
+			"\t\t\t\"IPV6\": \"%s\",\n"
+			"\t},\n"
+			"\t\"Generator\": \"%s\",\n"
+			"\t\"LastModified\": \"%s\",\n"
+			"\t\"Downloaded\": \"%s\",\n"
+			"\t\"Length\": \"%s\",\n"
+			"\t\"Content\":\n"
+			"\"",
+			article_header.title->value,
+			WIKIGRAB_BUILD,
+			article_header.server_name->value,
+			article_header.server_ipv4->value,
+			article_header.server_ipv6->value,
+			article_header.generator->value,
+			article_header.lastmod->value,
+			article_header.downloaded->value,
+			article_header.content_len->value);
+
+			__do_format_json(&content_buf);
+			buf_append(&content_buf, "\"\n}\n");
+	}
+	else
+	{
+		sprintf(buffer,
+			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n"
+			"                    Downloaded via WikiGrab v%s\n\n"
+			"      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n"
+			"%*s%s\n\n"
+			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
+			WIKIGRAB_BUILD,
+			LEFT_ALIGN_WIDTH, "Title: ", article_header.title->value,
+			LEFT_ALIGN_WIDTH, "Served-by: ", article_header.server_name->value,
+			LEFT_ALIGN_WIDTH, "Generated-by: ", article_header.generator->value,
+			LEFT_ALIGN_WIDTH, "Server-ip-v4: ", article_header.server_ipv4->value,
+			LEFT_ALIGN_WIDTH, "Server-ip-v6: ", article_header.server_ipv6->value,
+			LEFT_ALIGN_WIDTH, "Last-modified: ", article_header.lastmod->value,
+			LEFT_ALIGN_WIDTH, "Downloaded: ", article_header.downloaded->value,
+			LEFT_ALIGN_WIDTH, "Content-length: ", article_header.content_len->value);
+
+		__do_format_txt(&content_buf);
+	}
+
+	write(out_fd, buffer, strlen(buffer));
 	buf_write_fd(out_fd, &content_buf);
 	close(out_fd);
 	out_fd = -1;
-
-	wiki_cache_dealloc(http_hcache, (void *)server);
-	wiki_cache_dealloc(http_hcache, (void *)date);
-	wiki_cache_dealloc(http_hcache, (void *)lastmod);
 
 	if (option_set(OPT_OPEN_FINISH))
 	{
@@ -740,31 +1234,49 @@ extract_wiki_article(buf_t *buf)
 		}
 	}
 
+	wiki_cache_dealloc(value_cache, (void *)article_header.title);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_name);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6);
+	wiki_cache_dealloc(value_cache, (void *)article_header.generator);
+	wiki_cache_dealloc(value_cache, (void *)article_header.content_len);
+	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod);
+	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded);
+
+	wiki_cache_destroy(value_cache);
+
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
-	if (tmp_buf.data)
-		buf_destroy(&tmp_buf);
 
-	free(large_buffer);
-	large_buffer = NULL;
+	free(buffer);
+	buffer = NULL;
 
 	return 0;
 
 	out_destroy_file:
+
 	ftruncate(out_fd, (off_t)0);
 	unlink(file_title.buf_head);
 
 	out_destroy_bufs:
+
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
-	if (tmp_buf.data)
-		buf_destroy(&tmp_buf);
 
-	free(large_buffer);
-	large_buffer = NULL;
+	free(buffer);
+	buffer = NULL;
 
-	wiki_cache_dealloc(http_hcache, (void *)server);
-	wiki_cache_dealloc(http_hcache, (void *)date);
-	wiki_cache_dealloc(http_hcache, (void *)lastmod);
+	wiki_cache_dealloc(value_cache, (void *)article_header.title);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_name);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6);
+	wiki_cache_dealloc(value_cache, (void *)article_header.generator);
+	wiki_cache_dealloc(value_cache, (void *)article_header.content_len);
+	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod);
+	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded);
+
+	wiki_cache_destroy(value_cache);
+
+	fail:
 	return -1;
 }
