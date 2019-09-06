@@ -12,7 +12,6 @@ typedef struct connection_t
 	buf_t write_buf;
 	char *host;
 	char *page;
-	int using_tls;
 	SSL_CTX *ssl_ctx;
 } connection_t;
 
