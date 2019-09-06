@@ -50,10 +50,12 @@ inline SSL *conn_tls(connection_t *conn)
 	return conn->ssl;
 }
 
+#if 0
 inline int conn_using_tls(connection_t *conn)
 {
 	return conn->using_tls;
 }
+#endif
 
 /**
  * __init_openssl - initialise the openssl library
@@ -106,7 +108,10 @@ open_connection(connection_t *conn)
 	}
 
 	if (!aip)
-		goto fail;
+	{
+		fprintf(stderr, "open_connection: error obtaining remote host address\n");
+		goto fail_release_ainf;
+	}
 
 	if (option_set(OPT_USE_TLS))
 		sock4.sin_port = htons(HTTPS_PORT_NR);
@@ -130,16 +135,29 @@ open_connection(connection_t *conn)
 	if (option_set(OPT_USE_TLS))
 	{
 		__init_openssl();
-		conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
-		conn->ssl = SSL_new(conn->ssl_ctx);
+
+		if (!(conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method())))
+		{
+			fprintf(stderr, "open_connection: SSL_CTX_new error\n");
+			goto fail_release_ainf;
+		}
+
+		if (!(conn->ssl = SSL_new(conn->ssl_ctx)))
+		{
+			fprintf(stderr, "open_connection: SSL_new error\n");
+			goto fail_free_ssl_ctx;
+		}
 
 		SSL_set_fd(conn->ssl, conn->sock); /* Set the socket for reading/writing */
 		SSL_set_connect_state(conn->ssl); /* Set as client */
-		conn->using_tls = 1;
 	}
 
 	freeaddrinfo(ainf);
 	return 0;
+
+	fail_free_ssl_ctx:
+	SSL_CTX_free(conn->ssl_ctx);
+	conn->ssl_ctx = NULL;
 
 	fail_release_ainf:
 	freeaddrinfo(ainf);
@@ -157,10 +175,12 @@ close_connection(connection_t *conn)
 	close(conn->sock);
 	conn->sock = -1;
 
-	if (conn_using_tls(conn))
+	if (option_set(OPT_USE_TLS))
 	{
 		SSL_CTX_free(conn->ssl_ctx);
+		conn->ssl_ctx = NULL;
 		SSL_free(conn->ssl);
+		conn->ssl = NULL;
 	}
 
 	buf_destroy(&conn->read_buf);
