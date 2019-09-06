@@ -31,7 +31,7 @@ wiki_cache_http_cookie_ctor(void *hh)
 }
 
 /**
- * wiki_cache_http_cookie_dtor - return object back to initialised state in cache
+ * wiki_cache_http_cookie_dtor - deconstruct objects before destroying cache
  * @hh: pointer to object in cache
  * -- called in wiki_cache_dealloc()
  */
@@ -42,10 +42,12 @@ wiki_cache_http_cookie_dtor(void *hh)
 
 	http_header_t *ch = (http_header_t *)hh;
 
-	memset(ch->name, 0, ch->nlen);
-	memset(ch->value, 0, ch->vlen);
+	free(ch->name);
+	ch->name = NULL;
+	free(ch->value);
+	ch->value = NULL;
 
-	ch->nlen = ch->vlen = 0;
+	return;
 }
 
 int
