@@ -42,6 +42,19 @@ __noret usage(int status)
 static void
 cache_cleanup(void)
 {
+	http_header_t *hp = (http_header_t *)http_hcache->cache;
+	int capacity = http_hcache->capacity;
+	int i;
+
+	for (i = 0; i < capacity; ++i)
+	{
+		if (wiki_cache_obj_used(http_hcache, (void *)hp))
+			wiki_cache_dealloc(http_hcache, (void *)hp);
+
+		++hp;
+	}
+
+	hp = NULL;
 	wiki_cache_destroy(http_hcache);
 }
 
@@ -192,11 +205,7 @@ main(int argc, char *argv[])
 	http_parse_page(argv[1], conn.page);
 
 	if (open_connection(&conn) < 0)
-	{
-		fprintf(stderr, "Failed to connect\n");
-		exit_ret = -ENOTCONN;
-		goto out;
-	}
+		goto fail;
 
 	again:
 	buf_clear(&conn.write_buf);
@@ -222,8 +231,11 @@ main(int argc, char *argv[])
 	if (option_set(OPT_REQ_HEADER))
 		printf("%s", conn.write_buf.buf_head);
 
-	http_send_request(&conn);
-	http_recv_response(&conn);
+	if (http_send_request(&conn) < 0)
+		goto fail_disconnect;
+
+	if (http_recv_response(&conn) < 0)
+		goto fail_disconnect;
 
 	if (option_set(OPT_RES_HEADER))
 		printf("%.*s", (int)http_response_header_len(&conn.read_buf), conn.read_buf.buf_head);
@@ -237,7 +249,7 @@ main(int argc, char *argv[])
 			if (exit_ret < 0)
 			{
 				printf("main: extract_wiki_article error\n");
-				goto out;
+				goto fail_disconnect;
 			}
 			break;
 		case HTTP_MOVED_PERMANENTLY:
@@ -264,13 +276,19 @@ main(int argc, char *argv[])
 			goto again;
 		default:
 			printf("%d -- %s\n", status_code, http_status_code_string(status_code));
-			exit_ret = status_code;
-			goto out;
+			goto fail_disconnect;
 	}
 
-	out:
 	free(conn.host);
 	free(conn.page);
 	close_connection(&conn);
-	exit(exit_ret);
+	exit(EXIT_SUCCESS);
+
+	fail_disconnect:
+	free(conn.host);
+	free(conn.page);
+	close_connection(&conn);
+
+	fail:
+	exit(EXIT_FAILURE);
 }
