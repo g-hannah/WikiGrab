@@ -55,27 +55,33 @@ __remove_html_tags(buf_t *buf)
 
 	savep = buf->buf_head;
 
-	p = memchr(savep, 0x3c, (tail - savep));
-
-	if (!p)
-		return;
-
-	while(*p == 0x3c)
+	while(1)
 	{
-		savep = p;
-
-		p = memchr(savep, 0x3e, (tail - savep));
+		p = memchr(savep, 0x3c, (tail - savep));
 
 		if (!p)
 			break;
 
-		++p;
+		while(*p == 0x3c)
+		{
+			savep = p;
 
-		range = (p - savep);
+			p = memchr(savep, 0x3e, (tail - savep));
 
-		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
-		p = savep;
-		tail = buf->buf_tail;
+			if (!p)
+				break;
+
+			++p;
+
+			range = (p - savep);
+
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			p = savep;
+			tail = buf->buf_tail;
+
+			if (p >= tail)
+				break;
+		}
 	}
 
 	return;
@@ -114,6 +120,9 @@ __remove_inline_refs(buf_t *buf)
 		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
 		tail = buf->buf_tail;
 		p = savep;
+
+		if (p >= tail)
+			break;
 	}
 }
 
@@ -1018,8 +1027,6 @@ extract_wiki_article(buf_t *buf)
 	else
 		strcpy(article_header.server_ipv6->value, "None");
 
-	buf_clear(&content_buf);
-
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
@@ -1031,9 +1038,9 @@ extract_wiki_article(buf_t *buf)
 	if (!p)
 		goto out_destroy_file;
 
-	buf_clear(&content_buf);
 
-	p = savep = content_buf.buf_head;
+	p = savep = buf->buf_head;
+	buf_clear(&content_buf);
 
 	/*
 	 * Copy everything between <p></p> tags.
@@ -1083,53 +1090,70 @@ extract_wiki_article(buf_t *buf)
 		size_t cmark_len = strlen(END_PARA_MARK);
 		size_t opener_len = strlen(opener);
 		size_t closer_len = strlen(closer);
-		ssize_t shift = 0;
+		size_t para_start_shift = 0;
+		size_t para_start_collapse = 0;
+		size_t para_end_shift = 0;
+		size_t para_end_collapse = 0;
+		char *_tail = NULL;
 
 		p = savep = content_buf.buf_head;
+		_tail = content_buf.buf_tail;
+
+		if (opener_len > omark_len)
+			para_start_shift = (opener_len - omark_len);
+		else
+		if (omark_len > opener_len)
+			para_start_collapse = (omark_len - opener_len);
+
+		if (closer_len > cmark_len)
+			para_end_shift = (closer_len - cmark_len);
+		else
+		if (cmark_len > closer_len)
+			para_end_collapse = (cmark_len - closer_len);
+
 		while(1)
 		{
 			p = strstr(savep, BEGIN_PARA_MARK);
 
-			if (!p)
+			if (!p || p >= _tail)
 				break;
 
-			shift = (opener_len - omark_len);
-
-			if (shift > 0)
-				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), shift);
+			if (para_start_shift > 0)
+				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), para_start_shift);
 
 			strncpy(p, opener, opener_len);
 
 			p += opener_len;
 
-			if (shift < 0)
-				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)(0 - shift));
+			if (para_start_collapse > 0)
+				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), para_start_collapse);
 
 			savep = p;
 
 			p = strstr(savep, END_PARA_MARK);
 
-			shift = (closer_len - cmark_len);
-
-			if (shift > 0)
-				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)shift);
+			if (para_end_shift > 0)
+				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), para_end_shift);
 
 			strncpy(p, closer, closer_len);
 
 			p += closer_len;
 
-			if (shift < 0)
-				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), (size_t)(0 - shift));
+			if (para_end_collapse > 0)
+				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), para_end_collapse);
 
 			savep = p;
+
+			_tail = content_buf.buf_tail;
 		}
 	}
 
-	sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
-	article_header.content_len->vlen = strlen(article_header.content_len->value);
-
 	if (option_set(OPT_FORMAT_XML))
 	{
+		buf_append(&content_buf, "</text>\n</wiki>\n");
+		sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
+		article_header.content_len->vlen = strlen(article_header.content_len->value);
+
 		sprintf(buffer,
 			"%s\n"
 			"<wiki>\n"
@@ -1156,11 +1180,17 @@ extract_wiki_article(buf_t *buf)
 			article_header.downloaded->value,
 			article_header.content_len->value);
 
-			buf_append(&content_buf, "</text>\n</wiki>\n");
 	}
 	else
 	if (option_set(OPT_FORMAT_JSON))
 	{
+		buf_append(&content_buf, "\"\n}\n");
+
+		__do_format_json(&content_buf);
+
+		sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
+		article_header.content_len->vlen = strlen(article_header.content_len->value);
+
 		sprintf(buffer,
 			"{\n"
 			"\t\"Title\": \"%s\",\n"
@@ -1186,11 +1216,14 @@ extract_wiki_article(buf_t *buf)
 			article_header.downloaded->value,
 			article_header.content_len->value);
 
-			__do_format_json(&content_buf);
-			buf_append(&content_buf, "\"\n}\n");
 	}
 	else
 	{
+		__do_format_txt(&content_buf);
+
+		sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
+		article_header.content_len->vlen = strlen(article_header.content_len->value);
+		
 		sprintf(buffer,
 			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n"
 			"                    Downloaded via WikiGrab v%s\n\n"
@@ -1214,7 +1247,6 @@ extract_wiki_article(buf_t *buf)
 			LEFT_ALIGN_WIDTH, "Downloaded: ", article_header.downloaded->value,
 			LEFT_ALIGN_WIDTH, "Content-length: ", article_header.content_len->value);
 
-		__do_format_txt(&content_buf);
 	}
 
 	write(out_fd, buffer, strlen(buffer));
