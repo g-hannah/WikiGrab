@@ -146,7 +146,7 @@ http_send_request(connection_t *conn)
 
 	buf_t *buf = &conn->write_buf;
 
-	if (conn_using_tls(conn))
+	if (option_set(OPT_USE_TLS))
 	{
 		if (buf_write_tls(conn_tls(conn), buf) == -1)
 			goto fail;
@@ -197,19 +197,10 @@ http_recv_response(connection_t *conn)
 
 		clen -= deduct;
 
-#ifdef DEBUG
-		printf("content length=%s bytes\n", content_len->value);
-		printf("remaining to read=%lu bytes\n", clen);
-#endif
 		ssize_t n = 0;
 
 		while (clen)
 		{
-#ifdef DEBUG
-			static int loop_cnt = 0;
-			printf("loop #%d\n", loop_cnt++);
-			assert(conn->read_buf.data);
-#endif
 			if (option_set(OPT_USE_TLS))
 				n = buf_read_tls(conn->ssl, &conn->read_buf, clen);
 			else
