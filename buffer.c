@@ -552,38 +552,19 @@ buf_write_tls(SSL *ssl, buf_t *buf)
 				continue;
 			else
 			{
-				ERR_print_errors_fp(stderr);
 				int ssl_error = SSL_get_error(ssl, n);
-				static char ssl_error_buf[512];
 
 				switch(ssl_error)
 				{
 					case SSL_ERROR_NONE:
-						printf("SSL_ERROR_NONE\n");
-						goto fail;
+						continue;
 					case SSL_ERROR_ZERO_RETURN:
-						printf("SSL_ERROR_ZERO_RETURN\n");
 						goto fail;
 					case SSL_ERROR_WANT_WRITE:
-						printf("SSL_ERROR_WANT_WRITE\n");
-						goto fail;
-					case SSL_ERROR_WANT_X509_LOOKUP:
-						printf("SSL_ERROR_WANT_X509_LOOKUP\n");
-						goto fail;
-					case SSL_ERROR_SYSCALL:
-						printf("SSL_ERROR_SYSCALL\n");
-						goto fail;
-					case SSL_ERROR_SSL:
-						printf("SSL_ERROR_SSL\n");
-						goto fail;
+						continue;
 					default:
-						printf("unknown tls error...\n");
 						goto fail;
 				}
-
-				ERR_error_string(SSL_get_error(ssl, n), ssl_error_buf);
-				fprintf(stderr, "buf_write_tls: SSL_write error (%s)\n", ssl_error_buf);
-				goto fail;
 			}
 		}
 
