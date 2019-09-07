@@ -727,6 +727,144 @@ __get_tag_field(buf_t *buf, const char *tag, const char *field)
 }
 
 static int
+__extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
+{
+	assert(sbuf);
+	assert(dbuf);
+	assert(open_pattern);
+	assert(close_pattern);
+
+	char *p;
+	char *savep;
+	char *tail = sbuf->buf_tail;
+	char *search_from;
+	int depth = 0;
+	buf_t tmp_buf;
+	char *tmp_tail;
+	buf_t first_part;
+	size_t op_len;
+	char *save_start;
+	char *save_close;
+
+/*
+ * 1. SEARCH FOR OPEN PATTERN.
+ * 2. IF NONE FOUND, GOTO END.
+ * 3. SEARCH RANGE [OPENPATTERN+1,TAIL) FOR CLOSE PATTERN.
+ * 4. IF NONE FOUND, GOTO FAIL
+ * 5. SEARCH RANGE [OPENPATTERN+1, CLOSINGPATTERN) FOR MORE OPEN PATTERNS.
+ * 6. IF MORE, SEARCH RANGE [CLOSINGPATTERN+1,TAIL) FOR EQUAL # OF CLOSING PATTERNS, ELSE GOTO END.
+ * 7. SEARCH RANGE [CLOSINGPATTERN+1,CLOSINGPATTERN') FOR MORE OPEN PATTERNS.
+ * 8. GOTO 6.
+ * 9. END.
+ * 10. FAIL
+ *
+ */
+
+	buf_init(&tmp_buf, DEFAULT_TMP_BUF_SIZE);
+	buf_init(&first_part, 32);
+
+	p = open_pattern;
+	op_len = strlen(open_pattern);
+	while (!isspace(*p) && p < (open_pattern + op_len))
+		++p;
+
+/*
+ * Open_pattern may be something like "<div id=\"mw-content-text\""
+ * So extract the "<div" part so we can search ranges for more div tags.
+ */
+	buf_append_ex(&first_part, open_pattern, (p - open_pattern));
+
+	search_from = sbuf->buf_head;
+
+	p = strstr(search_from, open_pattern);
+
+	if (!p)
+		goto out;
+
+	save_start = p;
+	search_from = ++p;
+	p = strstr(search_from, close_pattern);
+
+	if (!p || p >= tail)
+	{
+		fprintf(stderr, "__extract_area: failed to find closing tag for \"%s\"\n", open_pattern);
+		goto fail;
+	}
+
+	save_close = p;
+
+	/*
+	 * Copy range [SEARCH_FROM,CLOSINGTAG) into temp buffer
+	 * so we can search for more open patterns.
+	 */
+	buf_append_ex(&tmp_buf, search_from, (save_close - search_from));
+	p = savep = tmp_buf.buf_head;
+	tmp_tail = tmp_buf.buf_tail;
+
+	while(1)
+	{
+		/*
+		 * Search range in the temp buffer for more open patterns.
+		 */
+		while(1)
+		{
+			p = strstr(savep, first_part.buf_head);
+
+			if (!p || p >= tmp_tail)
+				break;
+
+			++depth;
+
+			savep = ++p;
+		}
+
+		if (!depth) /* done */
+		{
+			buf_clear(dbuf);
+			buf_append_ex(dbuf, save_start, (save_close - save_start));
+			break;
+		}
+
+		search_from = (save_close + 1);
+		savep = search_from;
+
+		while (depth > 0)
+		{
+			p = strstr(savep, close_pattern);
+
+			if (!p || p >= tail)
+				break;
+
+			--depth;
+
+			save_close = p;
+			savep = ++p;
+		}
+
+		if (depth) /* error */
+		{
+			fprintf(stderr, "__extract_area: failed to find matching closing tag for \"%s\"\n", first_part.buf_head);
+			goto fail;
+		}
+
+		buf_clear(&tmp_buf);
+		buf_append_ex(&tmp_buf, search_from, (save_close - search_from));
+		tmp_tail = tmp_buf.buf_tail;
+		savep = tmp_buf.buf_head;
+	}
+
+	out:
+	buf_destroy(&tmp_buf);
+	buf_destroy(&first_part);
+	return 0;
+
+	fail:
+	buf_destroy(&tmp_buf);
+	buf_destroy(&first_part);
+	return -1;
+}
+
+static int
 __remove_braces(buf_t *buf)
 {
 	assert(buf);
@@ -883,12 +1021,329 @@ __normalise_file_title(buf_t *buf)
 	return;
 }
 
+/**
+ * __mark_list_tags - mark <ul> <li> tags so __do_format_txt() won't
+ *    destroy the list structure when changing line length, etc.
+ * @buf: the buffer with our extracted article data.
+ */
+static void
+__mark_list_tags(buf_t *buf)
+{
+	assert(buf);
+
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t ulist_start_len = strlen(BEGIN_ULIST_MARK);
+	size_t ulist_end_len = strlen(END_ULIST_MARK);
+	size_t list_start_len = strlen(BEGIN_LIST_MARK);
+	size_t list_end_len = strlen(END_LIST_MARK);
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, "<ul>");
+
+		if (!p || p >= tail)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), ulist_start_len);
+		tail = buf->buf_tail;
+		strncpy(p, BEGIN_ULIST_MARK, ulist_start_len);
+
+		savep = p;
+
+		p = strstr(savep, "</ul>");
+
+		if (!p || p >= tail)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), ulist_end_len);
+		tail = buf->buf_tail;
+		strncpy(p, END_ULIST_MARK, ulist_end_len);
+
+		savep = p;
+	}
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, "<li>");
+
+		if (!p || p >= tail)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), list_start_len);
+		tail = buf->buf_tail;
+		strncpy(p, BEGIN_LIST_MARK, list_start_len);
+
+		savep = p;
+
+		p = strstr(savep, "</li>");
+
+		if (!p || p >= tail)	
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), list_end_len);
+		tail = buf->buf_tail;
+		strncpy(p, END_LIST_MARK, list_end_len);
+
+		savep = p;
+	}
+
+	return;
+}
+
+/**
+ * __mark_html_tags - mark <p>, <ul>, <li> tags for XML formatting.
+ * @buf: the buffer with our extracted article data.
+ */
+static void
+__mark_html_tags(buf_t *buf)
+{
+	assert(buf);
+
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t para_start_len = strlen(BEGIN_PARA_MARK);
+	size_t para_end_len = strlen(END_PARA_MARK);
+
+	__mark_list_tags(buf);
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, "<p>");
+
+		if (!p || p >= tail)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), para_start_len);
+		tail = buf->buf_tail;
+		strncpy(p, BEGIN_PARA_MARK, para_start_len);
+
+		savep = p;
+
+		p = strstr(savep, "</p>");
+
+		if (!p || p >= tail)
+			break;
+
+		buf_shift(buf, (off_t)(p - buf->buf_head), para_end_len);
+		tail = buf->buf_tail;
+		strncpy(p, END_PARA_MARK, para_end_len);
+
+		savep = p;
+	}
+
+	return;
+}
+
+static void
+__replace_tag_marks(buf_t *buf)
+{
+	assert(buf);
+
+	size_t para_start_tag_len = strlen(PARA_START_TAG);
+	size_t para_end_tag_len = strlen(PARA_END_TAG);
+	size_t para_start_len = strlen(BEGIN_PARA_MARK);
+	size_t para_end_len = strlen(END_PARA_MARK);
+	size_t ulist_start_tag_len = strlen(ULIST_START_TAG);
+	size_t ulist_end_tag_len = strlen(ULIST_END_TAG);
+	size_t ulist_start_len = strlen(BEGIN_ULIST_MARK);
+	size_t ulist_end_len = strlen(END_ULIST_MARK);
+	size_t list_start_tag_len = strlen(LIST_START_TAG);
+	size_t list_end_tag_len = strlen(LIST_END_TAG);
+	size_t list_start_len = strlen(BEGIN_LIST_MARK);
+	size_t list_end_len = strlen(END_LIST_MARK);
+	size_t para_start_shift = 0;
+	size_t para_end_shift = 0;
+	size_t ulist_start_shift = 0;
+	size_t ulist_end_shift = 0;
+	size_t list_start_shift = 0;
+	size_t list_end_shift = 0;
+	size_t para_start_collapse = 0;
+	size_t para_end_collapse = 0;
+	size_t ulist_start_collapse = 0;
+	size_t ulist_end_collapse = 0;
+	size_t list_start_collapse = 0;
+	size_t list_end_collapse = 0;
+	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
+
+	if (para_start_len > para_start_tag_len)
+		para_start_collapse = (para_start_len - para_start_tag_len);
+	else
+	if (para_start_tag_len > para_start_len)
+		para_start_shift = (para_start_tag_len - para_start_len);
+
+	if (para_end_len > para_end_tag_len)
+		para_end_collapse = (para_end_len - para_end_tag_len);
+	else
+	if (para_end_tag_len > para_end_len)
+		para_end_shift = (para_end_tag_len - para_end_len);
+
+	if (ulist_start_len > ulist_start_tag_len)
+		ulist_start_collapse = (ulist_start_len - ulist_start_tag_len);
+	else
+	if (ulist_start_tag_len > ulist_start_len)
+		ulist_start_shift = (ulist_start_tag_len - ulist_start_len);
+
+	if (ulist_end_len > ulist_end_tag_len)
+		ulist_end_collapse = (ulist_end_len - ulist_end_tag_len);
+	else
+	if (ulist_end_tag_len > ulist_end_len)
+		ulist_end_shift = (ulist_end_tag_len - ulist_end_len);
+
+	if (list_start_len > list_start_tag_len)
+		list_start_collapse = (list_start_len - list_start_tag_len);
+	else
+	if (list_start_tag_len > list_start_len)
+		list_start_shift = (list_start_tag_len - list_start_len);
+
+	if (list_end_len > list_end_tag_len)
+		list_end_collapse = (list_end_len - list_end_tag_len);
+	else
+	if (list_end_tag_len > list_end_len)
+		list_end_shift = (list_end_tag_len - list_end_len);
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, BEGIN_PARA_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		if (para_start_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), para_start_shift);
+
+		strncpy(p, PARA_START_TAG, para_start_tag_len);
+
+		p += para_start_tag_len;
+
+		if (para_start_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), para_start_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+
+		p = strstr(savep, END_PARA_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		if (para_end_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), para_end_shift);
+
+		strncpy(p, PARA_END_TAG, para_end_tag_len);
+
+		p += para_end_tag_len;
+
+		if (para_end_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), para_end_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+	}
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, BEGIN_ULIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		if (ulist_start_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), ulist_start_shift);
+
+		strncpy(p, ULIST_START_TAG, ulist_start_tag_len);
+
+		p += ulist_start_tag_len;
+
+		if (ulist_start_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), ulist_start_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+
+		p = strstr(savep, END_ULIST_MARK);
+	
+		if (!p || p >= tail)
+			break;
+
+		if (ulist_end_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), ulist_end_shift);
+
+		strncpy(p, ULIST_END_TAG, ulist_end_tag_len);
+
+		p += ulist_end_tag_len;
+
+		if (ulist_end_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), ulist_end_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+	}
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, BEGIN_LIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		if (list_start_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), list_start_shift);
+
+		strncpy(p, LIST_START_TAG, list_start_tag_len);
+
+		p += list_start_tag_len;
+
+		if (list_start_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), list_start_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+
+		p = strstr(savep, END_LIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		if (list_end_shift > 0)
+			buf_shift(buf, (off_t)(p - buf->buf_head), list_end_shift);
+
+		strncpy(p, LIST_END_TAG, list_end_tag_len);
+
+		p += list_end_tag_len;
+
+		if (list_end_collapse > 0)
+			buf_collapse(buf, (off_t)(p - buf->buf_head), list_end_collapse);
+
+		tail = buf->buf_tail;
+		savep = p;
+	}
+
+	return;
+}
+
 int
 extract_wiki_article(buf_t *buf)
 {
 	int out_fd = -1;
-	char *p;
-	char *savep;
+	//char *p;
+	//char *savep;
 	buf_t file_title;
 	buf_t content_buf;
 	http_header_t *server;
@@ -1030,9 +1485,11 @@ extract_wiki_article(buf_t *buf)
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
-
 	__remove_braces(buf);
+	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
+		goto out_destroy_file;
 
+#if 0
 	RESET();
 	p = strstr(savep, "\"mw-content-text\"");
 	if (!p)
@@ -1070,6 +1527,13 @@ extract_wiki_article(buf_t *buf)
 
 		savep = p;
 	}
+#endif
+
+	if (option_set(OPT_FORMAT_TXT))
+		__mark_list_tags(&content_buf); /* Otherwise the structure will be destroyed */
+	else
+	if (option_set(OPT_FORMAT_XML))
+		__mark_html_tags(&content_buf); /* Mark paragraph and list tags for later */
 
 	__remove_html_tags(&content_buf);
 	__remove_inline_refs(&content_buf);
@@ -1077,76 +1541,13 @@ extract_wiki_article(buf_t *buf)
 	__replace_html_entities(&content_buf);
 	__remove_garbage(&content_buf);
 
-	/*
-	 * Replace the _BEGIN_PARA_ and _END_PARA_
-	 * with <paragraph> and </paragraph>
-	 * respectively.
-	 */
 	if (option_set(OPT_FORMAT_XML))
-	{
-		static char *opener = "<paragraph>";
-		static char *closer = "</paragraph>\n\n";
-		size_t omark_len = strlen(BEGIN_PARA_MARK);
-		size_t cmark_len = strlen(END_PARA_MARK);
-		size_t opener_len = strlen(opener);
-		size_t closer_len = strlen(closer);
-		size_t para_start_shift = 0;
-		size_t para_start_collapse = 0;
-		size_t para_end_shift = 0;
-		size_t para_end_collapse = 0;
-		char *_tail = NULL;
+		__replace_tag_marks(&content_buf);
 
-		p = savep = content_buf.buf_head;
-		_tail = content_buf.buf_tail;
-
-		if (opener_len > omark_len)
-			para_start_shift = (opener_len - omark_len);
-		else
-		if (omark_len > opener_len)
-			para_start_collapse = (omark_len - opener_len);
-
-		if (closer_len > cmark_len)
-			para_end_shift = (closer_len - cmark_len);
-		else
-		if (cmark_len > closer_len)
-			para_end_collapse = (cmark_len - closer_len);
-
-		while(1)
-		{
-			p = strstr(savep, BEGIN_PARA_MARK);
-
-			if (!p || p >= _tail)
-				break;
-
-			if (para_start_shift > 0)
-				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), para_start_shift);
-
-			strncpy(p, opener, opener_len);
-
-			p += opener_len;
-
-			if (para_start_collapse > 0)
-				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), para_start_collapse);
-
-			savep = p;
-
-			p = strstr(savep, END_PARA_MARK);
-
-			if (para_end_shift > 0)
-				buf_shift(&content_buf, (off_t)(p - content_buf.buf_head), para_end_shift);
-
-			strncpy(p, closer, closer_len);
-
-			p += closer_len;
-
-			if (para_end_collapse > 0)
-				buf_collapse(&content_buf, (off_t)(p - content_buf.buf_head), para_end_collapse);
-
-			savep = p;
-
-			_tail = content_buf.buf_tail;
-		}
-	}
+	/*
+ 	 * List marks for .txt format will be dealt with
+	 * in __do_format_txt()
+	 */
 
 	if (option_set(OPT_FORMAT_XML))
 	{
@@ -1179,7 +1580,6 @@ extract_wiki_article(buf_t *buf)
 			article_header.lastmod->value,
 			article_header.downloaded->value,
 			article_header.content_len->value);
-
 	}
 	else
 	if (option_set(OPT_FORMAT_JSON))
@@ -1215,7 +1615,6 @@ extract_wiki_article(buf_t *buf)
 			article_header.lastmod->value,
 			article_header.downloaded->value,
 			article_header.content_len->value);
-
 	}
 	else
 	{
@@ -1246,7 +1645,6 @@ extract_wiki_article(buf_t *buf)
 			LEFT_ALIGN_WIDTH, "Last-modified: ", article_header.lastmod->value,
 			LEFT_ALIGN_WIDTH, "Downloaded: ", article_header.downloaded->value,
 			LEFT_ALIGN_WIDTH, "Content-length: ", article_header.content_len->value);
-
 	}
 
 	write(out_fd, buffer, strlen(buffer));
