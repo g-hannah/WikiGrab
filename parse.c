@@ -15,6 +15,46 @@
 #include "wikigrab.h"
 
 int
+content_cache_ctor(void *obj)
+{
+	assert(obj);
+
+	content_t *content = (content_t *)obj;
+
+	if (!(content->data = calloc(16384, 1)))
+		return -1;
+
+	content->len = 0;
+	content->off = 0;
+
+	return 0;
+}
+
+void
+content_cache_dtor(void *obj)
+{
+	assert(obj);
+
+	content_t *content = (content_t *)obj;
+
+	if (content->data)
+		free(content->data);
+
+	memset(content, 0, sizeof(*content));
+
+	return;
+}
+
+int
+content_objects_compare(const void *obj1, const void *obj2)
+{
+	content_t *c1 = (content_t *)obj1;
+	content_t *c2 = (content_t *)obj2;
+
+	return (int)((int)c1->off - (int)c2->off);
+}
+
+int
 value_cache_ctor(void *obj)
 {
 	assert(obj);
@@ -801,7 +841,7 @@ __get_tag_field(buf_t *buf, const char *tag, const char *field)
 }
 
 static int
-__extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
+__extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
 {
 	assert(sbuf);
 	assert(dbuf);
@@ -819,6 +859,11 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 	size_t op_len;
 	char *save_start;
 	char *save_close;
+	char *para_start;
+	char *para_end;
+	char *ulist_start;
+	char *ulist_end;
+	content_t *content = NULL;
 
 /*
  * 1. SEARCH FOR OPEN PATTERN.
@@ -893,11 +938,7 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 		}
 
 		if (!depth) /* done */
-		{
-			buf_clear(dbuf);
-			buf_append_ex(dbuf, save_start, (save_close - save_start));
 			break;
-		}
 
 		search_from = (save_close + 1);
 		savep = search_from;
@@ -925,6 +966,87 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 		buf_append_ex(&tmp_buf, search_from, (save_close - search_from));
 		tmp_tail = tmp_buf.buf_tail;
 		savep = tmp_buf.buf_head;
+	}
+
+	buf_clear(&tmp_buf);
+	buf_append_ex(&tmp_buf, save_start, (save_close - save_start));
+	tail = tmp_buf.buf_tail;
+	savep = tmp_buf.buf_head;
+
+	/*
+	 * Get all <p></p> content and <ul></ul> content
+	 * and store in content_t cache objects with their
+	 * offsets from start of data. Sort the objects
+	 * based on their offsets, then write them to file
+	 * in the correct order.
+	 */
+	while(1)
+	{
+		para_start = strstr(savep, "<p");
+
+		if (!para_start || para_start >= tail)
+			break;
+
+		savep = para_start;
+
+		para_end = strstr(savep, "</p");
+
+		if (!para_end || para_end >= tail)
+			break;
+
+		p = memchr(para_end, 0x3e, (tail - para_end));
+
+		if (!p)
+			break;
+
+		para_end = ++p;
+
+		savep = para_end;
+
+		content = wiki_cache_alloc(cachep);
+
+		assert(content);
+		assert(wiki_cache_obj_used(cachep, (void *)content));
+
+		strncpy(content->data, para_start, (para_end - para_start));
+		content->len = (para_end - para_start);
+		content->off = (off_t)(para_start - tmp_buf.buf_head);
+	}
+
+	savep = tmp_buf.buf_head;
+	tail = tmp_buf.buf_tail;
+
+	while(1)
+	{
+		ulist_start = strstr(savep, "<ul");
+
+		if (!ulist_start || ulist_start >= tail)
+			break;
+
+		savep = ulist_start;
+
+		ulist_end = strstr(savep, "</ul");
+
+		if (!ulist_end || ulist_end >= tail)
+			break;
+
+		p = memchr(ulist_end, 0x3e, (tail - ulist_end));
+
+		if (!p)
+			break;
+
+		ulist_end = ++p;
+
+		savep = p;
+
+		content = wiki_cache_alloc(cachep);
+
+		assert(content);
+		assert(wiki_cache_obj_used(cachep, (void *)content));
+
+		strncpy(content->data, ulist_start, (ulist_end - ulist_start));
+		content->len = (ulist_end - ulist_start);
+		content->off = (off_t)(ulist_start - tmp_buf.buf_head);
 	}
 
 	out:
@@ -1117,7 +1239,7 @@ __mark_list_tags(buf_t *buf)
 
 	while(1)
 	{
-		p = strstr(savep, "<ul>");
+		p = strstr(savep, "<ul");
 
 		if (!p || p >= tail)
 			break;
@@ -1144,7 +1266,7 @@ __mark_list_tags(buf_t *buf)
 
 	while(1)
 	{
-		p = strstr(savep, "<li>");
+		p = strstr(savep, "<li");
 
 		if (!p || p >= tail)
 			break;
@@ -1155,7 +1277,7 @@ __mark_list_tags(buf_t *buf)
 
 		savep = p;
 
-		p = strstr(savep, "</li>");
+		p = strstr(savep, "</li");
 
 		if (!p || p >= tail)	
 			break;
@@ -1191,7 +1313,7 @@ __mark_html_tags(buf_t *buf)
 
 	while(1)
 	{
-		p = strstr(savep, "<p>");
+		p = strstr(savep, "<p");
 
 		if (!p || p >= tail)
 			break;
@@ -1202,7 +1324,7 @@ __mark_html_tags(buf_t *buf)
 
 		savep = p;
 
-		p = strstr(savep, "</p>");
+		p = strstr(savep, "</p");
 
 		if (!p || p >= tail)
 			break;
@@ -1246,6 +1368,7 @@ __replace_tag_marks(buf_t *buf)
 	size_t ulist_end_collapse = 0;
 	size_t list_start_collapse = 0;
 	size_t list_end_collapse = 0;
+	size_t range = 0;
 	char *tail = buf->buf_tail;
 	char *p;
 	char *savep;
@@ -1384,6 +1507,19 @@ __replace_tag_marks(buf_t *buf)
 
 		p += list_start_tag_len;
 
+		savep = p;
+		while (*p == 0x0a)
+			++p;
+
+		range = (p - savep);
+
+		if (range > 0)
+		{
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			tail = buf->buf_tail;
+			p = savep;
+		}
+
 		if (list_start_collapse > 0)
 			buf_collapse(buf, (off_t)(p - buf->buf_head), list_start_collapse);
 
@@ -1394,6 +1530,22 @@ __replace_tag_marks(buf_t *buf)
 
 		if (!p || p >= tail)
 			break;
+
+		savep = (p - 1);
+
+		while (*savep == 0x0a)
+			--savep;
+
+		++savep;
+
+		range = (p - savep);
+
+		if (range > 0)
+		{
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			tail = buf->buf_tail;
+			p = savep;
+		}
 
 		if (list_end_shift > 0)
 			buf_shift(buf, (off_t)(p - buf->buf_head), list_end_shift);
@@ -1416,8 +1568,6 @@ int
 extract_wiki_article(buf_t *buf)
 {
 	int out_fd = -1;
-	//char *p;
-	//char *savep;
 	buf_t file_title;
 	buf_t content_buf;
 	http_header_t *server;
@@ -1433,6 +1583,7 @@ extract_wiki_article(buf_t *buf)
 	int gotv4 = 0;
 	int gotv6 = 0;
 	wiki_cache_t *value_cache = NULL;
+	wiki_cache_t *content_cache = NULL;
 	struct article_header article_header;
 	size_t vlen;
 
@@ -1451,6 +1602,13 @@ extract_wiki_article(buf_t *buf)
 			0,
 			value_cache_ctor,
 			value_cache_dtor);
+
+	content_cache = wiki_cache_create(
+			"content_cache",
+			sizeof(content_t),
+			0,
+			content_cache_ctor,
+			content_cache_dtor);
 
 	article_header.title = (value_t *)wiki_cache_alloc(value_cache);
 	article_header.server_name = (value_t *)wiki_cache_alloc(value_cache);
@@ -1559,49 +1717,35 @@ extract_wiki_article(buf_t *buf)
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
-	__remove_braces(buf);
-	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
+	//__remove_braces(buf);
+	if (__extract_area(content_cache, buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
-
-#if 0
-	RESET();
-	p = strstr(savep, "\"mw-content-text\"");
-	if (!p)
-		goto out_destroy_file;
-
-
-	p = savep = buf->buf_head;
-	buf_clear(&content_buf);
 
 	/*
-	 * Copy everything between <p></p> tags.
+	 * Now we just need to sort the content_t cache objects
+	 * so that we write the data to file in the correct
+	 * order.
 	 */
-	while (1)
+
+	qsort((void *)content_cache->cache,
+			(size_t)wiki_cache_nr_used(content_cache),
+			sizeof(content_t),
+			content_objects_compare);
+
+	int nr_used = wiki_cache_nr_used(content_cache);
+	int i;
+	content_t *obj;
+
+	obj = (content_t *)content_cache->cache;
+	for (i = 0; i < nr_used; ++i)
 	{
-		p = strstr(savep, "<p");
+		while (!wiki_cache_obj_used(content_cache, (void *)obj))
+			++obj;
 
-		if (!p)
-			break;
-
-		savep = p;
-		p = strstr(savep, "</p");
-
-		if (!p)
-			break;
-
-		if (option_set(OPT_FORMAT_XML))
-			buf_append(&content_buf, BEGIN_PARA_MARK);
-
-		buf_append_ex(&content_buf, savep, (p - savep));
-
-		if (option_set(OPT_FORMAT_XML))
-			buf_append(&content_buf, END_PARA_MARK);
-
+		buf_append_ex(&content_buf, obj->data, obj->len);
 		buf_append(&content_buf, "\n");
-
-		savep = p;
+		wiki_cache_dealloc(content_cache, (void *)obj);
 	}
-#endif
 
 	if (option_set(OPT_FORMAT_TXT))
 		__mark_list_tags(&content_buf); /* Otherwise the structure will be destroyed */
@@ -1614,6 +1758,7 @@ extract_wiki_article(buf_t *buf)
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
 	__remove_garbage(&content_buf);
+	__remove_braces(&content_buf);
 
 	if (option_set(OPT_FORMAT_XML))
 		__replace_tag_marks(&content_buf);
@@ -1749,6 +1894,8 @@ extract_wiki_article(buf_t *buf)
 
 	wiki_cache_destroy(value_cache);
 
+	wiki_cache_destroy(content_cache);
+
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
 
@@ -1780,6 +1927,8 @@ extract_wiki_article(buf_t *buf)
 	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded);
 
 	wiki_cache_destroy(value_cache);
+
+	wiki_cache_destroy(content_cache);
 
 	fail:
 	return -1;
