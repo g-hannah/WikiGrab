@@ -7,9 +7,21 @@
 #define WIKI_ARTICLE_LINE_LENGTH 72
 #define MAX_VALUE_LEN 1024
 
-#define XML_START_LINE "<?xml version=\"1.0\" ?>"
-#define BEGIN_PARA_MARK "_BEGIN_PARA_"
-#define END_PARA_MARK "_END_PARA_"
+#define XML_START_LINE		"<?xml version=\"1.0\" ?>"
+#define BEGIN_PARA_MARK		"_BEGIN_PARA_"
+#define END_PARA_MARK			"_END_PARA_"
+#define BEGIN_ULIST_MARK	"_BEGIN_ULIST_"
+#define END_ULIST_MARK		"_END_ULIST_"
+#define BEGIN_LIST_MARK		"_BEGIN_LIST_"
+#define END_LIST_MARK			"_END_LIST_"
+
+/* For XML formatting */
+#define PARA_START_TAG	"<paragraph>"
+#define PARA_END_TAG		"</paragraph>"
+#define ULIST_START_TAG	"<ulist>"
+#define ULIST_END_TAG		"</ulist>"
+#define LIST_START_TAG	"<e>"
+#define LIST_END_TAG		"</e>"
 
 typedef struct value_t value_t;
 
