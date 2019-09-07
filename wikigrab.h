@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define WIKIGRAB_BUILD "0.0.3"
+#define WIKIGRAB_BUILD "0.0.4"
 #define WIKIGRAB_DIR "/Wiki_Articles"
 
 #define clear_struct(s) memset((s), 0, sizeof((*s)))
