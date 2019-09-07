@@ -337,6 +337,11 @@ __do_format_txt(buf_t *buf)
 	int passes;
 	int remainder;
 	int volte_face = 0;
+	size_t ulist_start_len = strlen(BEGIN_ULIST_MARK);
+	size_t ulist_end_len = strlen(END_ULIST_MARK);
+	size_t list_start_len = strlen(BEGIN_LIST_MARK);
+	size_t list_end_len = strlen(END_LIST_MARK);
+	size_t range = 0;
 
 	p = buf->buf_head;
 	if (*p == 0x0a)
@@ -345,6 +350,75 @@ __do_format_txt(buf_t *buf)
 			++p;
 
 		buf_collapse(buf, (off_t)0, (p - buf->buf_head));
+		tail = buf->buf_tail;
+	}
+
+	tail = buf->buf_tail;
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, BEGIN_ULIST_MARK);
+	
+		if (!p || p >= tail)
+			break;
+
+		buf_collapse(buf, (off_t)(p - buf->buf_head), ulist_start_len);
+		tail = buf->buf_tail;
+
+		savep = p;
+
+		p = strstr(savep, END_ULIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		buf_collapse(buf, (off_t)(p - buf->buf_head), ulist_end_len);
+		tail = buf->buf_tail;
+		savep = p;
+	}
+
+	savep = buf->buf_head;
+
+	while(1)
+	{
+		p = strstr(savep, BEGIN_LIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		buf_collapse(buf, (off_t)(p - buf->buf_head), list_start_len);
+		tail = buf->buf_tail;
+
+		savep = p;
+
+		p = strstr(savep, END_LIST_MARK);
+
+		if (!p || p >= tail)
+			break;
+
+		strncpy(p, "\n\n", 2);
+
+		buf_collapse(buf, (off_t)((p - buf->buf_head) + 2), (list_end_len - 2));
+		tail = buf->buf_tail;
+
+		savep = p;
+
+		while (*p == 0x0a)
+			++p;
+
+		range = (p - savep);
+
+		if (range > 2)
+		{
+			savep += 2;
+			range = (p - savep);
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			tail = buf->buf_tail;
+			p = savep;
+		}
+
+		savep = p;
 	}
 
 	tail = buf->buf_tail;
