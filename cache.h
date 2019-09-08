@@ -32,10 +32,11 @@ typedef struct wiki_cache_t
 wiki_cache_t *wiki_cache_create(char *, size_t, int, wiki_cache_ctor_t, wiki_cache_dtor_t);
 void wiki_cache_destroy(wiki_cache_t *) __nonnull((1));
 void *wiki_cache_alloc(wiki_cache_t *) __nonnull((1)) __wur;
-void wiki_cache_dealloc(wiki_cache_t *, void *) __nonnull((1,2));
+int wiki_cache_dealloc(wiki_cache_t *, void *) __nonnull((1,2));
 int wiki_cache_obj_used(wiki_cache_t *, void *) __nonnull((1,2)) __wur;
 int wiki_cache_nr_used(wiki_cache_t *) __nonnull((1)) __wur;
 int wiki_cache_capacity(wiki_cache_t *) __nonnull((1)) __wur;
 void wiki_cache_clear_all(wiki_cache_t *) __nonnull((1));
+void wiki_cache_collapse_objs(wiki_cache_t *, int) __nonnull((1));
 
 #endif /* WIKI_CACHE_H */
