@@ -15,6 +15,15 @@
 #include "wikigrab.h"
 
 int
+sort_content_cache(const void *obj1, const void *obj2)
+{
+	content_t *c1 = (content_t *)obj1;
+	content_t *c2 = (content_t *)obj2;
+
+	return (c1->off - c2->off);
+}
+
+int
 content_cache_ctor(void *obj)
 {
 	assert(obj);
@@ -43,15 +52,6 @@ content_cache_dtor(void *obj)
 	memset(content, 0, sizeof(*content));
 
 	return;
-}
-
-int
-content_objects_compare(const void *obj1, const void *obj2)
-{
-	content_t *c1 = (content_t *)obj1;
-	content_t *c2 = (content_t *)obj2;
-
-	return (int)((int)c1->off - (int)c2->off);
 }
 
 int
@@ -1030,6 +1030,13 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 		if (!ulist_end || ulist_end >= tail)
 			break;
 
+		if (strstr(ulist_start, "toclevel"))
+		{
+			ulist_start = ++ulist_end;
+			savep = ulist_start;
+			continue;
+		}
+
 		p = memchr(ulist_end, 0x3e, (tail - ulist_end));
 
 		if (!p)
@@ -1722,29 +1729,25 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 	/*
-	 * Now we just need to sort the content_t cache objects
-	 * so that we write the data to file in the correct
-	 * order.
+	 * Now CONTENT_CACHE has paragraphs and lists in the wrong order.
+	 * We just need to sort them based on their offsets from the start
+	 * of the data.
 	 */
-
 	qsort((void *)content_cache->cache,
-			(size_t)wiki_cache_nr_used(content_cache),
-			sizeof(content_t),
-			content_objects_compare);
+				(size_t)wiki_cache_nr_used(content_cache),
+				content_cache->objsize,
+				sort_content_cache);
 
-	int nr_used = wiki_cache_nr_used(content_cache);
 	int i;
-	content_t *obj;
+	int nr_used = wiki_cache_nr_used(content_cache);
+	content_t *cp;
 
-	obj = (content_t *)content_cache->cache;
+	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
 	{
-		while (!wiki_cache_obj_used(content_cache, (void *)obj))
-			++obj;
-
-		buf_append_ex(&content_buf, obj->data, obj->len);
+		buf_append_ex(&content_buf, cp->data, cp->len);
 		buf_append(&content_buf, "\n");
-		wiki_cache_dealloc(content_cache, (void *)obj);
+		++cp;
 	}
 
 	if (option_set(OPT_FORMAT_TXT))
