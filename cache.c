@@ -131,8 +131,15 @@ wiki_cache_obj_used(wiki_cache_t *cachep, void *obj)
 	{
 		while (offset > (off_t)capacity)
 		{
-			ptr = ptr->next;
-			offset = ((char *)obj - (char *)ptr->cache);
+			if (ptr->next)
+			{
+				ptr = ptr->next;
+				offset = ((char *)obj - (char *)ptr->cache);
+			}
+			else
+			{
+				return -1;
+			}
 		}
 	}
 
@@ -305,20 +312,49 @@ wiki_cache_alloc(wiki_cache_t *cachep)
  * @cachep: pointer to the metadata cache structure
  * @slot: the object to be returned
  */
-void
+int
 wiki_cache_dealloc(wiki_cache_t *cachep, void *slot)
 {
 	assert(cachep);
 	assert(slot);
 
-	off_t obj_off;
+	int obj_idx;
+	int capacity;
+	int cache_nr;
 	size_t objsize = cachep->objsize;
+	wiki_cache_t *ptr;
 
-	obj_off = (off_t)(((char *)slot - (char *)cachep->cache) / objsize);
+	obj_idx = (int)(((char *)slot - (char *)cachep->cache) / objsize);
 
-	__wiki_cache_mark_unused(cachep, obj_off);
+	capacity = wiki_cache_capacity(cachep);
+	ptr = cachep;
 
-	return;
+	if (obj_idx >= capacity)
+	{
+		if (!ptr->next) /* error */
+			goto fail;
+
+		cache_nr = (obj_idx / capacity);
+
+		while (cache_nr--)
+			ptr = ptr->next;
+
+		if (!ptr)
+			goto fail;
+
+		obj_idx = (obj_idx % capacity);
+	}
+
+	if (obj_idx >= capacity || obj_idx < 0)
+		goto fail;
+	
+	++(ptr->nr_free);
+	__wiki_cache_mark_unused(ptr, obj_idx);
+
+	return 0;
+
+	fail:
+	return -1;
 }
 
 void
@@ -335,6 +371,61 @@ wiki_cache_clear_all(wiki_cache_t *cachep)
 		wiki_cache_dealloc(cachep, obj);
 		obj = (void *)((char *)obj + cachep->objsize);
 	}
+
+	return;
+}
+
+void
+wiki_cache_collapse_objs(wiki_cache_t *cachep, int idx)
+{
+	size_t objsize = cachep->objsize;
+	int capacity = cachep->capacity;
+	int total_used = wiki_cache_nr_used(cachep);
+	int i;
+	int cache_nr;
+	void *obj;
+	wiki_cache_t *ptr;
+
+	total_used -= idx;
+
+	ptr = cachep;
+	while (ptr->next)
+	{
+		ptr = ptr->next;
+		total_used += wiki_cache_nr_used(ptr);
+	}
+
+	ptr = cachep;
+
+	if (idx > capacity)
+	{
+		cache_nr = (idx / capacity);
+
+		while (cache_nr--)
+			ptr = ptr->next;
+
+	}
+
+	obj = (ptr + ((idx % capacity) * objsize));
+
+	for (i = idx; i < (total_used - 1); ++i)
+	{
+		if (i && !(i % capacity))
+		{
+			if (!ptr->next)
+				break;
+
+			ptr = ptr->next;
+			obj = ptr->cache;
+		}
+
+		memcpy((void *)obj, (void *)((char *)obj + objsize), objsize);
+		obj = (void *)((char *)obj + objsize);
+
+		__wiki_cache_mark_used(ptr, (i % capacity));
+	}
+
+	wiki_cache_dealloc(ptr, obj);
 
 	return;
 }
