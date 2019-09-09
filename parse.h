@@ -39,6 +39,12 @@ struct content_t
 	off_t off;
 };
 
+struct offset_idx
+{
+	off_t off;
+	int idx;
+};
+
 struct article_header
 {
 	value_t *title;
