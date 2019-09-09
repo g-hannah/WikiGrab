@@ -32,6 +32,8 @@ __noret usage(int status)
 			"-S              show HTTP response headers(s)\n"
 			"--open/-O       open article in text editor when done\n"
 			"--TLS/-T        use a secure TLS connection\n"
+			"--txt           format article in plain text file (default)\n"
+			"--xml           format article in XML\n"
 			"--print/-P      print the parsed article to stdout\n"
 			"--help/-h       display this information\n",
 			PROG_NAME);
@@ -83,12 +85,6 @@ get_runtime_options(int argc, char *argv[])
 			unset_option(OPT_FORMAT_XML|OPT_FORMAT_JSON);
 		}
 		else
-		if (!strcmp("--json", argv[i]))
-		{
-			set_option(OPT_FORMAT_JSON);
-			unset_option(OPT_FORMAT_XML|OPT_FORMAT_TXT);
-		}
-		else
 		if (!strcmp("--open", argv[i])
 		|| !strcmp("-O", argv[i]))
 		{
@@ -125,7 +121,7 @@ get_runtime_options(int argc, char *argv[])
 	/*
 	 * If none set, use default of txt
 	 */
-	if (!option_set(OPT_FORMAT_TXT|OPT_FORMAT_JSON|OPT_FORMAT_XML))
+	if (!option_set(OPT_FORMAT_TXT|OPT_FORMAT_XML))
 		set_option(OPT_FORMAT_TXT);
 }
 
