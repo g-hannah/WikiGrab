@@ -14,6 +14,8 @@
 #include "parse.h"
 #include "wikigrab.h"
 
+#define CONTENT_DATA_SIZE		16384
+
 int
 sort_content_cache(const void *obj1, const void *obj2)
 {
@@ -30,7 +32,7 @@ content_cache_ctor(void *obj)
 
 	content_t *content = (content_t *)obj;
 
-	if (!(content->data = calloc(16384, 1)))
+	if (!(content->data = calloc(CONTENT_DATA_SIZE, 1)))
 		return -1;
 
 	content->len = 0;
@@ -99,29 +101,89 @@ __remove_html_tags(buf_t *buf)
 	{
 		p = memchr(savep, 0x3c, (tail - savep));
 
+		if (!p || p >= tail)
+			break;
+
+		if (option_set(OPT_FORMAT_XML))
+		{
+			if (!strncmp(p, "<p", 2)
+			|| !strncmp(p, "<ul", 3)
+			|| !strncmp(p, "<li", 3)
+			|| !strncmp(p, "<table", 6)
+			|| !strncmp(p, "<tbody", 6)
+			|| !strncmp(p, "<tr", 3)
+			|| !strncmp(p, "<td", 3)
+			|| !strncmp(p, "<pre", 4))
+			{
+				/*
+				 * We want to keep the tags, but without the classes, styles, etc.
+				 */
+				savep = p;
+
+				while (!isspace(*savep) && *savep != 0x3e)
+					++savep;
+
+				p = savep;
+
+				if (*p != 0x3e)
+				{
+					savep = p;
+
+					p = memchr(savep, 0x3e, (tail - savep));
+
+					if (!p)
+						break;
+
+					range = (p - savep);
+
+					buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+					p = savep;
+				}
+
+				continue;
+			}
+			else
+			if (!strncmp("</p", p, 3)
+			|| !strncmp("</ul", p, 4)
+			|| !strncmp("</li", p, 4)
+			|| !strncmp("</table", p, 7)
+			|| !strncmp("</tbody", p, 7)
+			|| !strncmp("</tr", p, 4)
+			|| !strncmp("</td", p, 4)
+			|| !strncmp("</pre", p, 5))
+			{
+				savep = ++p;
+				continue;
+			}
+		}
+		else
+		{
+			if (!strncmp("</li", p, 4)
+			|| !strncmp("</tr", p, 4)
+			|| !strncmp("</td", p, 4)
+			|| !strncmp("</ul", p, 4)
+			|| !strncmp("</pre", p, 5))
+			{
+				buf_shift(buf, (off_t)(p - buf->buf_head), (size_t)1);
+				strncpy(p, "\n", 1);
+				++p;
+			}
+		}
+
+		savep = p;
+
+		p = memchr(savep, 0x3e, (tail - savep));
+
 		if (!p)
 			break;
 
-		while(*p == 0x3c)
-		{
-			savep = p;
+		++p;
 
-			p = memchr(savep, 0x3e, (tail - savep));
+		range = (p - savep);
 
-			if (!p)
-				break;
-
-			++p;
-
-			range = (p - savep);
-
-			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
-			p = savep;
-			tail = buf->buf_tail;
-
-			if (p >= tail)
-				break;
-		}
+		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+		p = savep;
+		tail = buf->buf_tail;
 	}
 
 	return;
@@ -174,13 +236,13 @@ __remove_html_encodings(buf_t *buf)
 	char *tail = buf->buf_tail;
 	size_t range;
 
-	p = savep = buf->buf_tail;
+	p = savep = buf->buf_head;
 
 	while(1)
 	{
 		p = strstr(savep, "&#");
 
-		if (!p)
+		if (!p || p >= tail)
 			break;
 
 		*p++ = 0x20;
@@ -210,12 +272,13 @@ struct html_entity_t
 	char _char;
 };
 
-struct html_entity_t HTML_ENTS[5] =
+struct html_entity_t HTML_ENTS[6] =
 {
 	{ "&quot;", 0x22 },
 	{ "&amp;", 0x26 },
 	{ "&lt;", 0x3c },
 	{ "&gt;", 0x3e },
+	{ "&nbsp;", 0x20 },
 	{ (char *)NULL, 0 }
 };
 
@@ -225,7 +288,6 @@ __replace_html_entities(buf_t *buf)
 	char *tail = buf->buf_tail;
 	char *p;
 	char *savep;
-	size_t len;
 	int i;
 
 	if (option_set(OPT_FORMAT_XML))
@@ -238,14 +300,23 @@ __replace_html_entities(buf_t *buf)
 		while (1)
 		{
 			p = strstr(savep, HTML_ENTS[i].entity);
-			len = strlen(HTML_ENTS[i].entity - 1);
 
 			if (!p || p >= tail)
 				break;
 
 			*p++ = HTML_ENTS[i]._char;
-			buf_collapse(buf, (off_t)(p - buf->buf_head), len);
 			savep = p;
+			p = memchr(savep, ';', (tail - savep));
+
+			if (!p)
+				break;
+
+			++p;
+
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), (p - savep));
+
+			savep = p;
+
 			tail = buf->buf_tail;
 		}
 	}
@@ -289,6 +360,8 @@ __remove_garbage(buf_t *buf)
 		|| strstr(copy_buf.buf_head, "&lt;")
 		|| strstr(copy_buf.buf_head, "&gt;")
 		|| strstr(copy_buf.buf_head, "&quot;")
+		|| strstr(copy_buf.buf_head, "&amp;")
+		|| strstr(copy_buf.buf_head, "&nbsp;")
 		|| (isdigit(*(savep-1)) && isdigit(*(savep+1))) /* e.g., "Version 2.0" */
 		|| (!memchr(p, '-', range)
 		&& !memchr(p, '{', range)
@@ -710,56 +783,6 @@ __do_format_txt(buf_t *buf)
 	return 0;
 }
 
-static void
-__do_format_json(buf_t *buf)
-{
-	char *p;
-	char *savep;
-	char *tail = buf->buf_tail;
-	size_t range;
-
-	p = savep = buf->buf_head;
-
-	while(1)
-	{
-		p = memchr(savep, 0x22, (tail - savep));
-
-		if (!p)
-			break;
-
-		buf_shift(buf, (off_t)(p - buf->buf_head), (size_t)1);
-		*p++ = '/';
-
-		savep = ++p;
-		tail = buf->buf_tail;
-	}
-
-	p = savep = buf->buf_head;
-	while(1)
-	{
-		p = memchr(savep, 0x0a, (tail - savep));
-
-		if (!p)
-			break;
-
-		savep = p;
-
-		while (*p == 0x0a)
-			*p++ = 0x20;
-
-		range = (p - savep);
-
-		if (range > 1)
-		{
-			++savep;
-
-			buf_collapse(buf, (off_t)(savep - buf->buf_head), (p - savep));
-			p = savep;
-			tail = buf->buf_tail;
-		}
-	}
-}
-
 static char tag_content[8192];
 
 static char *
@@ -840,6 +863,65 @@ __get_tag_field(buf_t *buf, const char *tag, const char *field)
 	return tag_content;
 }
 
+static void
+__get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char *close_pattern)
+{
+	assert(cachep);
+	assert(buf);
+	assert(open_pattern);
+	assert(close_pattern);
+
+	char *savep = buf->buf_head;
+	char *tail = buf->buf_tail;
+	char *start;
+	char *end;
+	content_t *content = NULL;
+	size_t len;
+
+	while(1)
+	{
+		start = strstr(savep, open_pattern);
+
+		if (!start || start >= tail)
+			break;
+
+		savep = start;
+
+		end = strstr(savep, close_pattern);
+
+		if (!end || end >= tail)
+			break;
+
+		savep = end;
+
+		end = memchr(savep, 0x3e, (tail - savep));
+
+		if (!end)
+			break;
+
+		++end;
+
+		content = wiki_cache_alloc(cachep);
+
+		if (!content)
+			break;
+
+		len = (end - start);
+
+		if (len >= CONTENT_DATA_SIZE)
+			content->data = realloc(content->data, len+1);
+
+		strncpy(content->data, start, (end - start));
+		content->len = len;
+		content->off = (off_t)(start - buf->buf_head);
+
+		savep = end;
+
+		if (savep >= tail)
+			break;
+	}
+}
+
 static int
 __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
 {
@@ -859,11 +941,6 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 	size_t op_len;
 	char *save_start;
 	char *save_close;
-	char *para_start;
-	char *para_end;
-	char *ulist_start;
-	char *ulist_end;
-	content_t *content = NULL;
 
 /*
  * 1. SEARCH FOR OPEN PATTERN.
@@ -970,91 +1047,24 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 
 	buf_clear(&tmp_buf);
 	buf_append_ex(&tmp_buf, save_start, (save_close - save_start));
-	tail = tmp_buf.buf_tail;
-	savep = tmp_buf.buf_head;
 
 	/*
-	 * Get all <p></p> content and <ul></ul> content
-	 * and store in content_t cache objects with their
-	 * offsets from start of data. Sort the objects
-	 * based on their offsets, then write them to file
-	 * in the correct order.
+	 * There is a lot of stuff we're not interested in before
+	 * the actual first paragraph within the <div class=\"mw-content-text\"...>
+	 * HTML division (such as side menus saying that the article
+	 * is, for example, part of a series on *insert topic*. So find
+	 * the first paragraph and collapse the buffer down to the start.
 	 */
-	while(1)
-	{
-		para_start = strstr(savep, "<p");
+	p = strstr(tmp_buf.buf_head, "<p");
 
-		if (!para_start || para_start >= tail)
-			break;
+	if (!p || p >= tmp_buf.buf_tail)
+		goto fail;
 
-		savep = para_start;
+	buf_collapse(&tmp_buf, (off_t)0, (p - tmp_buf.buf_head));
 
-		para_end = strstr(savep, "</p");
-
-		if (!para_end || para_end >= tail)
-			break;
-
-		p = memchr(para_end, 0x3e, (tail - para_end));
-
-		if (!p)
-			break;
-
-		para_end = ++p;
-
-		savep = para_end;
-
-		content = wiki_cache_alloc(cachep);
-
-		assert(content);
-		assert(wiki_cache_obj_used(cachep, (void *)content));
-
-		strncpy(content->data, para_start, (para_end - para_start));
-		content->len = (para_end - para_start);
-		content->off = (off_t)(para_start - tmp_buf.buf_head);
-	}
-
-	savep = tmp_buf.buf_head;
-	tail = tmp_buf.buf_tail;
-
-	while(1)
-	{
-		ulist_start = strstr(savep, "<ul");
-
-		if (!ulist_start || ulist_start >= tail)
-			break;
-
-		savep = ulist_start;
-
-		ulist_end = strstr(savep, "</ul");
-
-		if (!ulist_end || ulist_end >= tail)
-			break;
-
-		if (strstr(ulist_start, "toclevel"))
-		{
-			ulist_start = ++ulist_end;
-			savep = ulist_start;
-			continue;
-		}
-
-		p = memchr(ulist_end, 0x3e, (tail - ulist_end));
-
-		if (!p)
-			break;
-
-		ulist_end = ++p;
-
-		savep = p;
-
-		content = wiki_cache_alloc(cachep);
-
-		assert(content);
-		assert(wiki_cache_obj_used(cachep, (void *)content));
-
-		strncpy(content->data, ulist_start, (ulist_end - ulist_start));
-		content->len = (ulist_end - ulist_start);
-		content->off = (off_t)(ulist_start - tmp_buf.buf_head);
-	}
+	__get_all(cachep, &tmp_buf, "<p", "</p");
+	__get_all(cachep, &tmp_buf, "<ul", "</ul");
+	__get_all(cachep, &tmp_buf, "<table", "</table");
 
 	out:
 	buf_destroy(&tmp_buf);
@@ -1216,14 +1226,12 @@ __normalise_file_title(buf_t *buf)
 	if (option_set(OPT_FORMAT_XML))
 		buf_append(buf, ".xml");
 	else
-	if (option_set(OPT_FORMAT_JSON))
-		buf_append(buf, ".json");
-	else
 		buf_append(buf, ".txt");
 
 	return;
 }
 
+#if 0
 /**
  * __mark_list_tags - mark <ul> <li> tags so __do_format_txt() won't
  *    destroy the list structure when changing line length, etc.
@@ -1298,7 +1306,9 @@ __mark_list_tags(buf_t *buf)
 
 	return;
 }
+#endif
 
+#if 0
 /**
  * __mark_html_tags - mark <p>, <ul>, <li> tags for XML formatting.
  * @buf: the buffer with our extracted article data.
@@ -1318,43 +1328,52 @@ __mark_html_tags(buf_t *buf)
 
 	savep = buf->buf_head;
 
+	if (option_set(OPT_FORMAT_XML))
+	{
+		while(1)
+		{
+			p = strstr(savep, "<p");
+
+			if (!p || p >= tail)
+				break;
+
+			buf_shift(buf, (off_t)(p - buf->buf_head), para_start_len);
+			tail = buf->buf_tail;
+			strncpy(p, BEGIN_PARA_MARK, para_start_len);
+
+			savep = p;
+
+			p = strstr(savep, "</p");
+
+			if (!p || p >= tail)
+				break;
+
+			buf_shift(buf, (off_t)(p - buf->buf_head), para_end_len);
+			tail = buf->buf_tail;
+			strncpy(p, END_PARA_MARK, para_end_len);
+
+			savep = p;
+		}
+	}
+
 	while(1)
 	{
-		p = strstr(savep, "<p");
-
-		if (!p || p >= tail)
-			break;
-
-		buf_shift(buf, (off_t)(p - buf->buf_head), para_start_len);
-		tail = buf->buf_tail;
-		strncpy(p, BEGIN_PARA_MARK, para_start_len);
-
-		savep = p;
-
-		p = strstr(savep, "</p");
-
-		if (!p || p >= tail)
-			break;
-
-		buf_shift(buf, (off_t)(p - buf->buf_head), para_end_len);
-		tail = buf->buf_tail;
-		strncpy(p, END_PARA_MARK, para_end_len);
-
-		savep = p;
 	}
 
 	return;
 }
+#endif
 
+#if 0
 static void
 __replace_tag_marks(buf_t *buf)
 {
 	assert(buf);
 
-	size_t para_start_tag_len = strlen(PARA_START_TAG);
-	size_t para_end_tag_len = strlen(PARA_END_TAG);
-	size_t para_start_len = strlen(BEGIN_PARA_MARK);
-	size_t para_end_len = strlen(END_PARA_MARK);
+	//size_t para_start_tag_len = strlen(PARA_START_TAG);
+	//size_t para_end_tag_len = strlen(PARA_END_TAG);
+	//size_t para_start_len = strlen(BEGIN_PARA_MARK);
+	//size_t para_end_len = strlen(END_PARA_MARK);
 	size_t ulist_start_tag_len = strlen(ULIST_START_TAG);
 	size_t ulist_end_tag_len = strlen(ULIST_END_TAG);
 	size_t ulist_start_len = strlen(BEGIN_ULIST_MARK);
@@ -1363,14 +1382,20 @@ __replace_tag_marks(buf_t *buf)
 	size_t list_end_tag_len = strlen(LIST_END_TAG);
 	size_t list_start_len = strlen(BEGIN_LIST_MARK);
 	size_t list_end_len = strlen(END_LIST_MARK);
-	size_t para_start_shift = 0;
-	size_t para_end_shift = 0;
+	size_t table_start_tag_len = strlen(TABLE_START_TAG);
+	size_t table_start_len = strlen(BEGIN_TABLE_MARK);
+	size_t table_end_tag_len = strlen(TABLE_END_TAG);
+	size_t table_end_len = strlen(END_TABLE_MARK);
+	size_t tbody_start_tag_len = strlen(START_TBODY_TAG);
+	size_t tbody_start_len = strlen(BEGIN_TBODY_MARK);
+	//size_t para_start_shift = 0;
+	//size_t para_end_shift = 0;
 	size_t ulist_start_shift = 0;
 	size_t ulist_end_shift = 0;
 	size_t list_start_shift = 0;
 	size_t list_end_shift = 0;
-	size_t para_start_collapse = 0;
-	size_t para_end_collapse = 0;
+	//size_t para_start_collapse = 0;
+	//size_t para_end_collapse = 0;
 	size_t ulist_start_collapse = 0;
 	size_t ulist_end_collapse = 0;
 	size_t list_start_collapse = 0;
@@ -1570,6 +1595,50 @@ __replace_tag_marks(buf_t *buf)
 
 	return;
 }
+#endif
+
+static void
+__remove_excess_nl(buf_t *buf)
+{
+	assert(buf);
+
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		p = memchr(savep, 0x0a, (tail - savep));
+
+		if (!p)
+			break;
+
+		savep = p;
+
+		while (*p == 0x0a && p < tail)
+			++p;
+
+		range = (p - savep);
+
+		if (range > 2)
+		{
+			savep += 2;
+
+			range = (p - savep);
+
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			p = savep;
+			tail = buf->buf_tail;
+		}
+
+		savep = p;
+	}
+
+	return;
+}
 
 int
 extract_wiki_article(buf_t *buf)
@@ -1729,9 +1798,8 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 	/*
-	 * Now CONTENT_CACHE has paragraphs and lists in the wrong order.
-	 * We just need to sort them based on their offsets from the start
-	 * of the data.
+	 * Sort all the <p>,<ul>,<table>, etc based on offsetes
+	 * from the start of the extracted area data.
 	 */
 	qsort((void *)content_cache->cache,
 				(size_t)wiki_cache_nr_used(content_cache),
@@ -1750,11 +1818,17 @@ extract_wiki_article(buf_t *buf)
 		++cp;
 	}
 
+#if 0
+	/*
+	 * Mark certain HTML tags so we
+	 * can correctly format the text file.
+	 */
 	if (option_set(OPT_FORMAT_TXT))
-		__mark_list_tags(&content_buf); /* Otherwise the structure will be destroyed */
-	else
-	if (option_set(OPT_FORMAT_XML))
-		__mark_html_tags(&content_buf); /* Mark paragraph and list tags for later */
+	{
+		__mark_list_tags(&content_buf);
+		__mark_table_tags(&content_buf);
+	}
+#endif
 
 	__remove_html_tags(&content_buf);
 	__remove_inline_refs(&content_buf);
@@ -1762,9 +1836,7 @@ extract_wiki_article(buf_t *buf)
 	__replace_html_entities(&content_buf);
 	__remove_garbage(&content_buf);
 	__remove_braces(&content_buf);
-
-	if (option_set(OPT_FORMAT_XML))
-		__replace_tag_marks(&content_buf);
+	__remove_excess_nl(&content_buf);
 
 	/*
  	 * List marks for .txt format will be dealt with
@@ -1793,41 +1865,6 @@ extract_wiki_article(buf_t *buf)
 			"\t</metadata>\n"
 			"\t<text>\n",
 			XML_START_LINE,
-			article_header.title->value,
-			WIKIGRAB_BUILD,
-			article_header.server_name->value,
-			article_header.server_ipv4->value,
-			article_header.server_ipv6->value,
-			article_header.generator->value,
-			article_header.lastmod->value,
-			article_header.downloaded->value,
-			article_header.content_len->value);
-	}
-	else
-	if (option_set(OPT_FORMAT_JSON))
-	{
-		buf_append(&content_buf, "\"\n}\n");
-
-		__do_format_json(&content_buf);
-
-		sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
-		article_header.content_len->vlen = strlen(article_header.content_len->value);
-
-		sprintf(buffer,
-			"{\n"
-			"\t\"Title\": \"%s\",\n"
-			"\t\"Parser\": \"WikiGrab v%s\",\n"
-			"\t\"Server\": {\n"
-			"\t\t\t\"Name\": \"%s\",\n"
-			"\t\t\t\"IPV4\": \"%s\",\n"
-			"\t\t\t\"IPV6\": \"%s\",\n"
-			"\t},\n"
-			"\t\"Generator\": \"%s\",\n"
-			"\t\"LastModified\": \"%s\",\n"
-			"\t\"Downloaded\": \"%s\",\n"
-			"\t\"Length\": \"%s\",\n"
-			"\t\"Content\":\n"
-			"\"",
 			article_header.title->value,
 			WIKIGRAB_BUILD,
 			article_header.server_name->value,
