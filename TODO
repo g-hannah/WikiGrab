@@ -1,1 +1,2 @@
-Parse listed items within an article without parsing things like references at end of article, etc.
+Remove duplicate paragraphs, etc, that are extracted when taking <table></table> content
+and extracting all <p></p> separately.
