@@ -76,13 +76,13 @@ get_runtime_options(int argc, char *argv[])
 		if (!strcmp("--xml", argv[i]))
 		{
 			set_option(OPT_FORMAT_XML);
-			unset_option(OPT_FORMAT_JSON|OPT_FORMAT_TXT);
+			unset_option(OPT_FORMAT_TXT);
 		}
 		else
 		if (!strcmp("--txt", argv[i]))
 		{
 			set_option(OPT_FORMAT_TXT);
-			unset_option(OPT_FORMAT_XML|OPT_FORMAT_JSON);
+			unset_option(OPT_FORMAT_XML);
 		}
 		else
 		if (!strcmp("--open", argv[i])
