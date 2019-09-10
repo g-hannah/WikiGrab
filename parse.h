@@ -15,14 +15,6 @@
 #define BEGIN_LIST_MARK		"_BEGIN_LIST_"
 #define END_LIST_MARK			"_END_LIST_"
 
-/* For XML formatting */
-#define PARA_START_TAG	"<paragraph>\n"
-#define PARA_END_TAG		"</paragraph>"
-#define ULIST_START_TAG	"<ulist>\n"
-#define ULIST_END_TAG		"\n</ulist>"
-#define LIST_START_TAG	"<e>"
-#define LIST_END_TAG		"</e>"
-
 typedef struct value_t value_t;
 typedef struct content_t content_t;
 
