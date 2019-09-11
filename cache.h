@@ -9,7 +9,9 @@
  *   cache nr     obj nr
  */
 #define WIKI_CACHE_SIZE 4096
-#define WIKI_CACHE_BITMAP_SIZE (WIKI_CACHE_SIZE / 8)
+
+#define WIKI_CACHE_DEC_FREE(c) --((c)->nr_free)
+#define WIKI_CACHE_INC_FREE(c) ++((c)->nr_free)
 
 typedef int (*wiki_cache_ctor_t)(void *);
 typedef void (*wiki_cache_dtor_t)(void *);
