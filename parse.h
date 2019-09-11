@@ -27,7 +27,8 @@ struct value_t
 struct content_t
 {
 	char *data;
-	size_t len;
+	size_t data_len;
+	size_t alloc_len;
 	off_t off;
 };
 
