@@ -135,12 +135,20 @@ wiki_cache_create(char *name,
 	int	i;
 	void *obj = NULL;
 	void *cache = NULL;
+	size_t bitmap_size;
 
 	clear_struct(cachep);
 
-	cachep->cache = calloc(WIKI_CACHE_SIZE, 1);
 	cachep->objsize = size;
-	cachep->free_bitmap = calloc(WIKI_CACHE_BITMAP_SIZE, 1);
+	bitmap_size = (capacity / 8);
+	if (capacity & 0x7)
+		++bitmap_size;
+
+	if (!(cachep->cache = calloc(WIKI_CACHE_SIZE, 1)))
+		return NULL;
+
+	if (!(cachep->free_bitmap = calloc(bitmap_size, 1)))
+		return NULL;
 
 	cache = cachep->cache;
 
@@ -156,19 +164,25 @@ wiki_cache_create(char *name,
 	cachep->nr_free = capacity;
 	cachep->ctor = ctor;
 	cachep->dtor = dtor;
+	cachep->cache_size = WIKI_CACHE_SIZE;
+	cachep->bitmap_size = bitmap_size;
 
 #ifdef DEBUG
 	printf(
 			"Created cache \"%s\"\n"
 			"Size of each object=%lu bytes\n"
 			"Capacity of cache=%d objects\n"
+			"Bitmap size=%lu bytes\n"
+			"Bitmap can represent %lu objects\n"
 			"%s\n"
 			"%s\n",
 			name,
 			size,
 			capacity,
-			ctor ? "constructor provided\n" : "constructor not provided\n",
-			dtor ? "destructor provided\n" : "destructor not provided\n");
+			bitmap_size,
+			bitmap_size * 8,
+			ctor ? "constructor provided" : "constructor not provided",
+			dtor ? "destructor provided" : "destructor not provided");
 #endif
 
 	return cachep;
@@ -220,7 +234,10 @@ wiki_cache_alloc(wiki_cache_t *cachep)
 	size_t objsize = cachep->objsize;
 	size_t cache_size = cachep->cache_size;
 	uint16_t bitmap_size = cachep->bitmap_size;
-	int capacity = cachep->capacity;
+	int old_capacity = cachep->capacity;
+	int new_capacity = 0;
+	int added_capacity = 0;
+	int slack;
 	int i;
 
 
@@ -228,7 +245,7 @@ wiki_cache_alloc(wiki_cache_t *cachep)
 	{
 		__wiki_cache_mark_used(cachep, idx);
 
-		--(cachep->nr_free);
+		WIKI_CACHE_DEC_FREE(cachep);
 
 		slot = (void *)((char *)cache + (idx * objsize));
 
@@ -236,6 +253,17 @@ wiki_cache_alloc(wiki_cache_t *cachep)
 	}
 	else
 	{
+#ifdef DEBUG
+		printf(
+			"Not enough cache memory -- extending the cache\n"
+			"current cache size = %lu bytes\n"
+			"changing to size = %lu bytes\n"
+			"(extending ->free_bitmap too from %hu bytes to %hu bytes)\n",
+			cache_size,
+			cache_size * 2,
+			bitmap_size, bitmap_size * 2);
+#endif
+
 		if (!(cachep->cache = realloc(cachep->cache, cache_size * 2)))
 		{
 			fprintf(stderr, "wiki_cache_alloc: realloc error for ->cache (%s)\n", strerror(errno));
@@ -253,23 +281,47 @@ wiki_cache_alloc(wiki_cache_t *cachep)
 		for (i = 0; i < bitmap_size; ++i)
 			*bm++ = 0;
 
+		new_capacity = (old_capacity * 2);
+		added_capacity = new_capacity;
+
+		slack = ((cache_size % objsize) * 2);
+		if (slack > objsize)
+		{
+			while (slack > objsize)
+			{
+				++new_capacity;
+				slack -= objsize;
+			}
+		}
+
+		added_capacity = (new_capacity - old_capacity);
+
+		if (cachep->ctor)
+		{
+			void *obj = (void *)((char *)cachep->cache + (old_capacity * objsize));
+			for (i = 0; i < added_capacity; ++i)
+			{
+				cachep->ctor(obj);
+				obj = (void *)((char *)obj + objsize);
+			}
+		}
+
 		cachep->bitmap_size *= 2;
 		cachep->cache_size *= 2;
-		cachep->nr_free += capacity;
-		cachep->capacity *= 2;
+		cachep->nr_free += added_capacity;
+		cachep->capacity = new_capacity;
 
 		idx = __wiki_cache_next_free_idx(cachep);
 
 		__wiki_cache_mark_used(cachep, idx);
 
-		--(cachep->nr_free);
+		WIKI_CACHE_DEC_FREE(cachep);
 
 		cache = cachep->cache;
 
 		slot = (void *)((char *)cache + (idx * objsize));
 		return slot;
 	}
-
 
 	fail:
 	return NULL;
@@ -292,7 +344,7 @@ wiki_cache_dealloc(wiki_cache_t *cachep, void *slot)
 	obj_idx = (int)(((char *)slot - (char *)cachep->cache) / objsize);
 
 	__wiki_cache_mark_unused(cachep, obj_idx);
-	++(cachep->nr_free);
+	WIKI_CACHE_INC_FREE(cachep);
 
 	return;
 }
