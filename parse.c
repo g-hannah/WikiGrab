@@ -14,7 +14,7 @@
 #include "parse.h"
 #include "wikigrab.h"
 
-#define CONTENT_DATA_SIZE		16384
+#define CONTENT_DATA_SIZE		16384UL
 
 int
 sort_content_cache(const void *obj1, const void *obj2)
@@ -35,7 +35,14 @@ content_cache_ctor(void *obj)
 	if (!(content->data = calloc(CONTENT_DATA_SIZE, 1)))
 		return -1;
 
-	content->len = 0;
+#ifdef DEBUG
+	printf(
+		"allocated %lu bytes of memory @ %p (content->data)\n",
+		CONTENT_DATA_SIZE, content->data);
+#endif
+
+	content->data_len = 0;
+	content->alloc_len = CONTENT_DATA_SIZE;
 	content->off = 0;
 
 	return 0;
@@ -47,6 +54,19 @@ content_cache_dtor(void *obj)
 	assert(obj);
 
 	content_t *content = (content_t *)obj;
+
+#ifdef DEBUG
+	printf(
+		"freeing content_t object:\n"
+		"ptr: %p\n"
+		"data: %*.*s...\n"
+		"len: %lu bytes\n"
+		"off: %lu bytes\n",
+		content->data,
+		(int)20, (int)20, content->data,
+		content->data_len,
+		content->off);
+#endif
 
 	if (content->data)
 		free(content->data);
@@ -863,7 +883,7 @@ __get_tag_field(buf_t *buf, const char *tag, const char *field)
 	return tag_content;
 }
 
-static void
+static int
 __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char *close_pattern)
 {
 	assert(cachep);
@@ -904,22 +924,41 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 		content = wiki_cache_alloc(cachep);
 
 		if (!content)
-			break;
+			goto fail;
 
 		len = (end - start);
 
-		if (len >= CONTENT_DATA_SIZE)
-			content->data = realloc(content->data, len+1);
+		if (len >= content->alloc_len)
+		{
+#ifdef DEBUG
+			printf("reallocating memory @ %p\n", content->data);
+#endif
+			if (!(content->data = realloc(content->data, content->alloc_len * 2)))
+				goto fail;
 
+			content->alloc_len *= 2;
+#ifdef DEBUG
+			printf("memory is now at @ %p\n", content->data);
+#endif
+		}
+
+		assert((end - start) < content->alloc_len);
 		strncpy(content->data, start, (end - start));
-		content->len = len;
+		content->data_len = len;
 		content->off = (off_t)(start - buf->buf_head);
 
 		savep = end;
 
 		if (savep >= tail)
 			break;
+
+		content = NULL;
 	}
+
+	return 0;
+
+	fail:
+	return -1;
 }
 
 static int
@@ -1062,9 +1101,14 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 
 	buf_collapse(&tmp_buf, (off_t)0, (p - tmp_buf.buf_head));
 
-	__get_all(cachep, &tmp_buf, "<p", "</p");
-	__get_all(cachep, &tmp_buf, "<ul", "</ul");
-	__get_all(cachep, &tmp_buf, "<table", "</table");
+	if (__get_all(cachep, &tmp_buf, "<p", "</p") < 0)
+		goto fail;
+
+	if (__get_all(cachep, &tmp_buf, "<ul", "</ul") < 0)
+		goto fail;
+
+	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
+		goto fail;
 
 	out:
 	buf_destroy(&tmp_buf);
@@ -1204,7 +1248,7 @@ __normalise_file_title(buf_t *buf)
 	while (p < tail)
 	{
 		if (*p == 0x20
-		|| (*p != 0x2f && *p != 0x5f && !isalpha(*p) && !isdigit(*p)))
+		|| (*p != 0x5f && !isalpha(*p) && !isdigit(*p)))
 		{
 			*p++ = 0x5f;
 			if (*(p-2) == 0x5f)
@@ -1726,8 +1770,12 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&file_title, "/");
 
 	__get_tag_content(buf, "<title");
-	buf_append(&file_title, tag_content);
-	buf_snip(&file_title, strlen(" - Wikipedia"));
+
+	buf_append(&content_buf, tag_content);
+	__normalise_file_title(&content_buf);
+
+	buf_append(&file_title, content_buf.buf_head);
+	buf_clear(&content_buf);
 
 	vlen = strlen(tag_content);
 	strncpy(article_header.title->value, tag_content, vlen);
@@ -1737,8 +1785,6 @@ extract_wiki_article(buf_t *buf)
 	/*
 	 * Replace spaces (and any non-underscore non-ascii chars) with underscores.
 	 */
-	__normalise_file_title(&file_title);
-
 	__get_tag_field(buf, "<meta name=\"generator\"", "content");
 
 	vlen = strlen(tag_content);
@@ -1748,6 +1794,8 @@ extract_wiki_article(buf_t *buf)
 
 	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
 		goto out_destroy_bufs;
+
+	fprintf(stdout, "Created file \"%s\"\n", file_title.buf_head);
 
 	if (server->value[0])
 	{
@@ -1794,6 +1842,12 @@ extract_wiki_article(buf_t *buf)
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
 	//__remove_braces(buf);
+
+#ifdef DEBUG
+	printf("Calling __extract_area(content_cache(%p), buf(%p), &content_buf(%p), string, string)\n",
+			content_cache, buf, &content_buf);
+#endif
+
 	if (__extract_area(content_cache, buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
 
@@ -1813,7 +1867,7 @@ extract_wiki_article(buf_t *buf)
 	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
 	{
-		buf_append_ex(&content_buf, cp->data, cp->len);
+		buf_append_ex(&content_buf, cp->data, cp->data_len);
 		buf_append(&content_buf, "\n");
 		++cp;
 	}
