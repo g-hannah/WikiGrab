@@ -1,2 +1,4 @@
 Remove duplicate paragraphs, etc, that are extracted when taking <table></table> content
 and extracting all <p></p> separately.
+
+Handle mathematical encodings, such as {\sqrt {2}},3,\pi \,\!}
