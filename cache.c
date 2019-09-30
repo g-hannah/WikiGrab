@@ -263,8 +263,8 @@ wiki_cache_create(char *name,
 			"Created cache \"%s\"\n"
 			"Size of each object=%lu bytes\n"
 			"Capacity of cache=%d objects\n"
-			"Bitmap size=%lu bytes\n"
-			"Bitmap can represent %lu objects\n"
+			"Bitmap size=%hu bytes\n"
+			"Bitmap can represent %hu objects\n"
 			"%s\n"
 			"%s\n",
 			name,
