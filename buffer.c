@@ -103,11 +103,19 @@ buf_shift(buf_t *buf, off_t offset, size_t range)
 {
 	assert(buf);
 
-	char *from = buf->buf_head + offset;
-	char *to = from + range;
+	char *from;
+	char *to;
+	size_t slack = buf_slack(buf);
 
-	if (range > buf_slack(buf))
-		buf_extend(buf, (range - buf_slack(buf)));
+	if (range > slack)
+		buf_extend(buf, __ALIGN((range - slack)));
+
+/*
+ * Do this AFTER extending since memory might be
+ * elsewhere on heap after the realloc!!
+ */
+	from = buf->buf_head + offset;
+	to = from + range;
 
 	memmove(to, from, buf->buf_tail - from);
 	memset(from, 0, range);
@@ -156,13 +164,11 @@ int
 buf_append(buf_t *buf, char *str)
 {
 	size_t len = strlen(str);
-	size_t new_size;
+	size_t slack = buf_slack(buf);
 
-	new_size = (buf->buf_size + len);
-
-	if (new_size > buf_slack(buf))
+	if (len > slack)
 	{
-		buf_extend(buf, len);
+		buf_extend(buf, __ALIGN((len - slack)));
 	}
 
 	strcat(buf->buf_tail, str);
@@ -179,9 +185,10 @@ buf_append_ex(buf_t *buf, char *str, size_t bytes)
 		return -1;
 
 	size_t new_size = (buf->buf_size + bytes);
+	size_t slack = buf_slack(buf);
 
-	if (new_size > buf_slack(buf))
-		buf_extend(buf, bytes);
+	if (bytes > slack)
+		buf_extend(buf, __ALIGN((bytes - slack)));
 
 	strncpy(buf->buf_tail, str, bytes);
 
@@ -246,17 +253,17 @@ buf_read_fd(int fd, buf_t *buf, size_t bytes)
 	ssize_t n = 0;
 	ssize_t total_read = 0;
 	size_t buf_size = buf->buf_size;
-	char *p = buf->data;
+	size_t slack = buf_slack(buf);
 
 	if (bytes <= 0)
 		return 0;
 
-	if (bytes > buf_size)
-		buf_extend(buf, (bytes - buf_size));
+	if (bytes > slack)
+		buf_extend(buf, __ALIGN((bytes - slack)));
 
 	while (toread > 0)
 	{
-		n = read(fd, p, toread);
+		n = read(fd, buf->buf_tail, toread);
 		if (n < 0)
 		{
 			if (errno == EINTR)
@@ -265,7 +272,6 @@ buf_read_fd(int fd, buf_t *buf, size_t bytes)
 				goto fail;
 		}
 
-		p += n;
 		toread -= n;
 		total_read += n;
 
@@ -594,7 +600,7 @@ buf_copy(buf_t *to, buf_t *from)
 	assert(from);
 
 	if (to->buf_size < from->buf_size)
-		buf_extend(to, (from->buf_size - to->buf_size));
+		buf_extend(to, __ALIGN((from->buf_size - to->buf_size)));
 
 	memcpy(to->data, from->data, from->buf_size);
 	to->buf_head = (to->data + (from->buf_head - from->data));
