@@ -25,6 +25,7 @@ __buf_push_tail(buf_t *buf, size_t by)
 {
 	buf->buf_tail -= by;
 	buf->data_len -= by;
+	assert(buf->buf_tail >= buf->buf_head);
 }
 
 static inline void
@@ -41,6 +42,7 @@ __buf_pull_tail(buf_t *buf, size_t by)
 {
 	buf->buf_tail += by;
 	buf->data_len += by;
+	assert(buf->buf_tail <= buf->buf_end);
 }
 
 static inline void
@@ -48,6 +50,7 @@ __buf_pull_head(buf_t *buf, size_t by)
 {
 	buf->buf_head += by;
 	buf->data_len -= by;
+	assert(buf->buf_head <= buf->buf_tail);
 }
 
 int
@@ -108,7 +111,7 @@ buf_shift(buf_t *buf, off_t offset, size_t range)
 	char *to;
 	size_t slack = buf_slack(buf);
 
-	if (range > slack)
+	if (range >= slack)
 		buf_extend(buf, __ALIGN((range - slack)));
 
 /*
@@ -167,7 +170,7 @@ buf_append(buf_t *buf, char *str)
 	size_t len = strlen(str);
 	size_t slack = buf_slack(buf);
 
-	if (len > slack)
+	if (len >= slack)
 	{
 		buf_extend(buf, __ALIGN((len - slack)));
 	}
@@ -187,7 +190,7 @@ buf_append_ex(buf_t *buf, char *str, size_t bytes)
 
 	size_t slack = buf_slack(buf);
 
-	if (bytes > slack)
+	if (bytes >= slack)
 		buf_extend(buf, __ALIGN((bytes - slack)));
 
 	strncpy(buf->buf_tail, str, bytes);
@@ -257,7 +260,7 @@ buf_read_fd(int fd, buf_t *buf, size_t bytes)
 	if (bytes <= 0)
 		return 0;
 
-	if (bytes > slack)
+	if (bytes >= slack)
 		buf_extend(buf, __ALIGN((bytes - slack)));
 
 	while (toread > 0)
@@ -293,13 +296,18 @@ buf_read_socket(int sock, buf_t *buf, size_t toread)
 	size_t slack;
 	int sock_flags;
 
-	sock_flags = fcntl(sock, F_GETFL);
-	if (!(sock_flags & O_NONBLOCK))
-		fcntl(sock, F_SETFL, sock_flags | O_NONBLOCK);
+	if (!SOCK_SET_FLAG_ONCE)
+	{
+		sock_flags = fcntl(sock, F_GETFL);
+		if (!(sock_flags & O_NONBLOCK))
+			fcntl(sock, F_SETFL, sock_flags | O_NONBLOCK);
+
+		SOCK_SET_FLAG_ONCE = 1;
+	}
 
 	slack = buf_slack(buf);
 
-	if (toread > slack)
+	if (toread >= slack)
 		buf_extend(buf, __ALIGN((toread - slack)));
 
 	while (1)
@@ -367,13 +375,18 @@ buf_read_tls(SSL *ssl, buf_t *buf, size_t toread)
 
 	read_socket = SSL_get_rfd(ssl);
 
-	sock_flags = fcntl(read_socket, F_GETFL);
-	if (!(sock_flags & O_NONBLOCK))
-		fcntl(read_socket, F_SETFL, sock_flags | O_NONBLOCK);
+	if (!SOCK_SSL_SET_FLAG_ONCE)
+	{
+		sock_flags = fcntl(read_socket, F_GETFL);
+		if (!(sock_flags & O_NONBLOCK))
+			fcntl(read_socket, F_SETFL, sock_flags | O_NONBLOCK);
+
+		SOCK_SSL_SET_FLAG_ONCE = 1;
+	}
 
 	slack = buf_slack(buf);
 
-	if (toread > slack)
+	if (toread >= slack)
 		buf_extend(buf, __ALIGN((toread - slack)));
 
 	while (1)
@@ -604,6 +617,7 @@ buf_copy(buf_t *to, buf_t *from)
 	memcpy(to->data, from->data, from->buf_size);
 	to->buf_head = (to->data + (from->buf_head - from->data));
 	to->buf_tail = (to->data + (from->buf_tail - from->data));
+	to->buf_end = (to->data + to->buf_size);
 	to->data_len = from->data_len;
 
 	return;
