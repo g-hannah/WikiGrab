@@ -13,6 +13,9 @@
 #define DEFAULT_TMP_BUF_SIZE 16384
 #define DEFAULT_MAX_LINE_SIZE 1024
 
+int SOCK_SET_FLAG_ONCE;
+int SOCK_SSL_SET_FLAG_ONCE;
+
 uint32_t runtime_options;
 
 #define option_set(o) ((o) & runtime_options)
