@@ -50,7 +50,7 @@ do {\
 	++((c)->nr_active_ptrs);\
 } while (0)
 
-#define WIKI_CACHE_REMOVE_ACTIVE_PTR(c, p)\
+#define WIKI_CACHE_REMOVE_ACTIVE_PTR(c, o, p)\
 do {\
 	int __nr_active = (c)->nr_active_ptrs;\
 	int __i;\
@@ -60,7 +60,8 @@ do {\
 	__ap_ctx = &((c)->active_ptrs[0]);\
 	for (__i = 0; __i < __nr_active; ++__i)\
 	{\
-		if (__ap_ctx->ptr_addr == (p))\
+		if (__ap_ctx->ptr_addr == (p)\
+		&& *((unsigned long *)__ap_ctx->ptr_addr) == (unsigned long)(o))\
 		{\
 			for (__k = __i; __k < (__nr_active - 1); ++__k)\
 			{\
@@ -224,6 +225,12 @@ wiki_cache_create(char *name,
 	if (capacity & (BITS_PER_CHAR - 1))
 		++bitmap_size;
 
+	if (!(cachep->name = calloc(WIKI_CACHE_MAX_NAME, 1)))
+		goto fail_release_mem;
+
+	assert(strlen(name) < WIKI_CACHE_MAX_NAME);
+	strcpy(cachep->name, name);
+
 	if (!(cachep->cache = calloc(WIKI_CACHE_SIZE, 1)))
 		goto fail_release_mem;
 
@@ -232,31 +239,28 @@ wiki_cache_create(char *name,
 	if (!(cachep->free_bitmap = calloc(bitmap_size, 1)))
 		goto fail_release_mem;
 
-	assert(cachep->free_bitmap;
+	assert(cachep->free_bitmap);
 
 	if (!(cachep->active_ptrs = calloc(capacity, sizeof(struct active_ptr_ctx))))
 		goto out_release_mem;
 
 	assert(cachep->active_ptrs);
 
-	cachep->nr_active_ptrs = 0;
-
 	cache = cachep->cache;
 
-	for (i = 0; i < capacity; ++i)
+	if (ctor)
 	{
-		obj = (void *)((char *)cache + (size * i));
-
-		if (ctor)
-			ctor(obj);
+		for (i = 0; i < capacity; ++i)
+			ctor(__wiki_cache_object(cachep, i));
 	}
 
 	cachep->capacity = capacity;
 	cachep->nr_free = capacity;
-	cachep->ctor = ctor;
-	cachep->dtor = dtor;
+	cachep->nr_active_ptrs = 0;
 	cachep->cache_size = WIKI_CACHE_SIZE;
 	cachep->bitmap_size = bitmap_size;
+	cachep->ctor = ctor;
+	cachep->dtor = dtor;
 
 #ifdef DEBUG
 	printf(
@@ -282,6 +286,9 @@ wiki_cache_create(char *name,
 
 	if (cachep)
 	{
+		if (cachep->name)
+			free(cachep->name);
+
 		if (cachep->cache)
 			free(cachep->cache);
 
@@ -309,21 +316,17 @@ wiki_cache_destroy(wiki_cache_t *cachep)
 
 	int	i;
 	int capacity = wiki_cache_capacity(cachep);
-	void *obj = NULL;
-	size_t objsize = cachep->objsize;
 
-	obj = cachep->cache;
-
-	for (i = 0; i < capacity; ++i)
+	if (cachep->dtor)
 	{
-		if (cachep->dtor)
-			cachep->dtor(obj);
-
-		obj = (void *)((char *)obj + objsize);
+		for (i = 0; i < capacity; ++i)
+			cachep->dtor(__wiki_cache_object(cachep, i));
 	}
 
 	free(cachep->cache);
 	free(cachep->free_bitmap);
+	free(cachep->active_ptrs);
+	free(cachep->name);
 	free(cachep);
 
 	return;
@@ -348,7 +351,6 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 	int old_capacity = cachep->capacity;
 	int new_capacity = 0;
 	int added_capacity = 0;
-	int slack;
 	int i;
 	void *old_cache;
 	void *active_ptr_addr = ptr_addr;
@@ -358,7 +360,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 
 	if (idx != -1 && idx < old_capacity && wr_cache_nr_used(cachep) < old_capacity)
 	{
-		slot = (void *)((char *)cache + (idx * objsize));
+		slot = __wiki_cache_object(cachep, idx);
 
 		__wiki_cache_mark_used(cachep, idx);
 		WIKI_CACHE_DEC_FREE(cachep);
@@ -447,20 +449,36 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
  * @slot: the object to be returned
  */
 void
-wiki_cache_dealloc(wiki_cache_t *cachep, void *slot)
+wiki_cache_dealloc(wiki_cache_t *cachep, void *slot, void *ptr_addr)
 {
 	assert(cachep);
 	assert(slot);
 
-	int obj_idx;
-	size_t objsize = cachep->objsize;
-	
-	obj_idx = (int)(((char *)slot - (char *)cachep->cache) / objsize);
+	__wiki_cache_mark_unused(cachep, __wiki_cache_object_index(cachep, slot));
 
-	__wiki_cache_mark_unused(cachep, obj_idx);
+	if (ptr_addr)
+		WIKI_CACHE_REMOVE_ACTIVE_PTR(cachep, slot, ptr_addr);
+
 	WIKI_CACHE_INC_FREE(cachep);
 
 	return;
+}
+
+static void *
+__wiki_cache_get_object_owner(cachep, obj)
+{
+	int i;
+	int nr_active = cachep->nr_active_ptrs;
+	struct active_ptr_ctx *ap_ctx;
+
+	ap_ctx = &(cachep->active_ptrs[0]);
+	for (i = 0; i < nr_active; ++i)
+	{
+		if (*((unsigned long *)ap_ctx->ptr_addr) == (unsigned long)obj)
+			return ap_ctx->ptr_addr;
+	}
+
+	return NULL;
 }
 
 void
@@ -470,14 +488,11 @@ wiki_cache_clear_all(wiki_cache_t *cachep)
 	int i;
 	int capacity = cachep->capacity;
 
-	obj = cachep->cache;
-
 	for (i = 0; i < capacity; ++i)
 	{
+		obj = __wiki_cache_object(cachep, i);
 		if (wiki_cache_obj_used(cachep, obj))
-			wiki_cache_dealloc(cachep, obj);
-
-		obj = (void *)((char *)obj + cachep->objsize);
+			wiki_cache_dealloc(cachep, obj, __wiki_cache_get_object_owner(cachep, obj));
 	}
 
 	return;

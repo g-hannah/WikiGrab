@@ -9,6 +9,7 @@
  *   cache nr     obj nr
  */
 #define WIKI_CACHE_SIZE 4096
+#define WIKI_CACHE_MAX_NAME 32
 
 #define WIKI_CACHE_DEC_FREE(c) --((c)->nr_free)
 #define WIKI_CACHE_INC_FREE(c) ++((c)->nr_free)
