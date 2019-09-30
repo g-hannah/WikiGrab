@@ -118,7 +118,7 @@ static inline int __wiki_cache_next_free_idx(wiki_cache_t *cachep)
 			++bm;
 		}
 		else
-		if (*bm & bit)
+		if (!(*bm & bit))
 		{
 			assert(idx < capacity);
 			return idx;
@@ -185,8 +185,7 @@ wiki_cache_obj_used(wiki_cache_t *cachep, void *obj)
 	capacity = cachep->capacity;
 	idx = __wiki_cache_object_index(cachep, obj);
 
-	if (idx > capacity)
-		return -1;
+	assert(idx < capacity);
 
 	bm += (idx >> 3);
 
@@ -213,14 +212,14 @@ wiki_cache_create(char *name,
 	int	i;
 	void *obj = NULL;
 	void *cache = NULL;
-	size_t bitmap_size;
+	uint16_t bitmap_size;
 
 	assert(cachep);
 
 	clear_struct(cachep);
 
 	cachep->objsize = size;
-	bitmap_size = (capacity / BITS_PER_CHAR);
+	bitmap_size = (uint16_t)(capacity / BITS_PER_CHAR);
 
 	if (capacity & (BITS_PER_CHAR - 1))
 		++bitmap_size;
@@ -240,6 +239,9 @@ wiki_cache_create(char *name,
 		goto fail_release_mem;
 
 	assert(cachep->free_bitmap);
+
+	for (i = 0; (uint16_t)i < bitmap_size; ++i)
+		cachep->free_bitmap[i] = 0;
 
 	if (!(cachep->active_ptrs = calloc(capacity, sizeof(struct active_ptr_ctx))))
 		goto out_release_mem;
@@ -383,8 +385,6 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		if (!(cachep->cache = realloc(cachep->cache, new_capacity)))
 			goto fail_release_mem;
 
-
-
 		if (old_cache != cachep->cache)
 		{
 			if (in_cache)
@@ -409,8 +409,8 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		}
 
 		cachep->capacity = new_capacity;
-		cachep->nr_free += new_capacity;
-		cachep->cache_size  = (new_capacity * cachep->obj_size);
+		cachep->nr_free += (new_capacity - old_capacity);
+		cachep->cache_size = (new_capacity * cachep->obj_size);
 		cachep->bitmap_size = new_bitmap_size;
 
 		idx = __wiki_cache_next_free_idx(cachep);
