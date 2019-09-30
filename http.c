@@ -185,7 +185,7 @@ http_recv_response(connection_t *conn)
 
 	p += strlen(HTTP_EOH_SENTINEL);
 
-	http_header_t *content_len = (http_header_t *)wiki_cache_alloc(http_hcache);
+	http_header_t *content_len = (http_header_t *)wiki_cache_alloc(http_hcache, &content_len);
 	assert(content_len);
 	assert(wiki_cache_obj_used(http_hcache, (void *)content_len));
 
@@ -223,7 +223,7 @@ http_recv_response(connection_t *conn)
 	}
 
 	assert(conn->read_buf.magic == BUFFER_MAGIC);
-	wiki_cache_dealloc(http_hcache, content_len);
+	wiki_cache_dealloc(http_hcache, content_len, &content_len);
 
 	return 0;
 
@@ -535,13 +535,14 @@ http_append_header(buf_t *buf, http_header_t *hh)
 	return 0;
 }
 
+static http_header_t *generic_hp;
+
 int
 http_parse_header(buf_t *buf, wiki_cache_t *cachep)
 {
 	assert(buf);
 	assert(cachep);
 
-	http_header_t *hp;
 	char *p;
 	char *savep;
 	char *line;
@@ -565,13 +566,13 @@ http_parse_header(buf_t *buf, wiki_cache_t *cachep)
 		if (!p)
 			break;
 
-		hp = (http_header_t *)wiki_cache_alloc(cachep);
-		assert(wiki_cache_obj_used(cachep, (void *)hp));
+		generic_hp = (http_header_t *)wiki_cache_alloc(cachep, &generic_hp);
+		assert(wiki_cache_obj_used(cachep, (void *)generic_hp));
 
 		len = (p - savep);
-		strncpy(hp->name, savep, len);
-		hp->name[len] = 0;
-		hp->nlen = len;
+		strncpy(generic_hp->name, savep, len);
+		generic_hp->name[len] = 0;
+		generic_hp->nlen = len;
 
 		++p;
 
@@ -584,9 +585,9 @@ http_parse_header(buf_t *buf, wiki_cache_t *cachep)
 		savep = p;
 
 		len = (line - p);
-		strncpy(hp->value, p, len);
-		hp->value[len] = 0;
-		hp->vlen = len;
+		strncpy(generic_hp->value, p, len);
+		generic_hp->value[len] = 0;
+		generic_hp->vlen = len;
 
 		while ((*p == 0x0a || *p == 0x0d) && p < tail)
 			++p;

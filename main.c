@@ -22,6 +22,7 @@
 static char PROG_NAME[DEFAULT_PROG_NAME_MAX];
 
 wiki_cache_t *http_hcache;
+static http_header_t *cookie;
 
 static void
 __noret usage(int status)
@@ -44,19 +45,7 @@ __noret usage(int status)
 static void
 cache_cleanup(void)
 {
-	http_header_t *hp = (http_header_t *)http_hcache->cache;
-	int capacity = http_hcache->capacity;
-	int i;
-
-	for (i = 0; i < capacity; ++i)
-	{
-		if (wiki_cache_obj_used(http_hcache, (void *)hp))
-			wiki_cache_dealloc(http_hcache, (void *)hp);
-
-		++hp;
-	}
-
-	hp = NULL;
+	wiki_cache_clear_all(http_hcache);
 	wiki_cache_destroy(http_hcache);
 }
 
@@ -176,7 +165,6 @@ main(int argc, char *argv[])
 	connection_t conn;
 	buf_t read_copy;
 	http_header_t *location;
-	http_header_t *cookie;
 	off_t off;
 	int status_code;
 	int exit_ret = EXIT_SUCCESS;
@@ -215,7 +203,7 @@ main(int argc, char *argv[])
 
 		while (http_check_header(&conn.read_buf, "Set-Cookie", off, &off))
 		{
-			cookie = (http_header_t *)wiki_cache_alloc(http_hcache);
+			cookie = (http_header_t *)wiki_cache_alloc(http_hcache, &cookie);
 			http_fetch_header(&conn.read_buf, "Set-Cookie", cookie, off);
 			http_append_header(&conn.write_buf, cookie);
 			++off;
@@ -249,7 +237,7 @@ main(int argc, char *argv[])
 			}
 			break;
 		case HTTP_MOVED_PERMANENTLY:
-			location = wiki_cache_alloc(http_hcache);
+			location = wiki_cache_alloc(http_hcache, &location);
 			assert(wiki_cache_obj_used(http_hcache, (void *)location));
 			http_fetch_header(&conn.read_buf, "Location", location, (off_t)0);
 			strncpy(conn.page, location->value, location->vlen);
@@ -268,7 +256,7 @@ main(int argc, char *argv[])
 			}
 
 			buf_clear(&conn.write_buf);
-			wiki_cache_dealloc(http_hcache, (void *)location);
+			wiki_cache_dealloc(http_hcache, (void *)location, &location);
 			goto again;
 		default:
 			printf("%d -- %s\n", status_code, http_status_code_string(status_code));

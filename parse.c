@@ -921,7 +921,7 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 
 		++end;
 
-		content = wiki_cache_alloc(cachep);
+		content = wiki_cache_alloc(cachep, &content);
 
 		if (!content)
 			goto fail;
@@ -1730,19 +1730,19 @@ extract_wiki_article(buf_t *buf)
 			content_cache_ctor,
 			content_cache_dtor);
 
-	article_header.title = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.server_name = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.server_ipv4 = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.server_ipv6 = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.generator = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.lastmod = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.downloaded = (value_t *)wiki_cache_alloc(value_cache);
-	article_header.content_len = (value_t *)wiki_cache_alloc(value_cache);
+	article_header.title = (value_t *)wiki_cache_alloc(value_cache, &article_header.title);
+	article_header.server_name = (value_t *)wiki_cache_alloc(value_cache, &article_header.server_name);
+	article_header.server_ipv4 = (value_t *)wiki_cache_alloc(value_cache, &article_header.server_ipv4);
+	article_header.server_ipv6 = (value_t *)wiki_cache_alloc(value_cache, &article_header.server_ipv6);
+	article_header.generator = (value_t *)wiki_cache_alloc(value_cache, &article_header.generator);
+	article_header.lastmod = (value_t *)wiki_cache_alloc(value_cache, &article_header.lastmod);
+	article_header.downloaded = (value_t *)wiki_cache_alloc(value_cache, &article_header.downloaded);
+	article_header.content_len = (value_t *)wiki_cache_alloc(value_cache, &article_header.content_len);
 
 	/* Extract these values from the HTTP response header */
-	server = (http_header_t *)wiki_cache_alloc(http_hcache);
-	date = (http_header_t *)wiki_cache_alloc(http_hcache);
-	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache);
+	server = (http_header_t *)wiki_cache_alloc(http_hcache, &server);
+	date = (http_header_t *)wiki_cache_alloc(http_hcache, &date);
+	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache, &lastmod);
 
 	http_fetch_header(buf, "Server", server, (off_t)0);
 	http_fetch_header(buf, "Date", date, (off_t)0);
@@ -1757,9 +1757,9 @@ extract_wiki_article(buf_t *buf)
 	strcpy(article_header.lastmod->value, lastmod->value);
 	article_header.lastmod->vlen = lastmod->vlen;
 
-	wiki_cache_dealloc(http_hcache, (void *)server);
-	wiki_cache_dealloc(http_hcache, (void *)date);
-	wiki_cache_dealloc(http_hcache, (void *)lastmod);
+	wiki_cache_dealloc(http_hcache, (void *)server, &server);
+	wiki_cache_dealloc(http_hcache, (void *)date, &date);
+	wiki_cache_dealloc(http_hcache, (void *)lastmod, &lastmod);
 
 	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
 	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
@@ -1977,17 +1977,16 @@ extract_wiki_article(buf_t *buf)
 		}
 	}
 
-	wiki_cache_dealloc(value_cache, (void *)article_header.title);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_name);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6);
-	wiki_cache_dealloc(value_cache, (void *)article_header.generator);
-	wiki_cache_dealloc(value_cache, (void *)article_header.content_len);
-	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod);
-	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded);
+	wiki_cache_dealloc(value_cache, (void *)article_header.title, &article_header.title);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_name, &article_header.server_name);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4, &article_header.server_ipv4);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6, &article_header.server_ipv6);
+	wiki_cache_dealloc(value_cache, (void *)article_header.generator, &article_header.generator);
+	wiki_cache_dealloc(value_cache, (void *)article_header.content_len, &article_header.content_len);
+	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod, &article_header.lastmod);
+	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded, &article_header.downloaded);
 
 	wiki_cache_destroy(value_cache);
-
 	wiki_cache_destroy(content_cache);
 
 	buf_destroy(&content_buf);
@@ -2011,17 +2010,16 @@ extract_wiki_article(buf_t *buf)
 	free(buffer);
 	buffer = NULL;
 
-	wiki_cache_dealloc(value_cache, (void *)article_header.title);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_name);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4);
-	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6);
-	wiki_cache_dealloc(value_cache, (void *)article_header.generator);
-	wiki_cache_dealloc(value_cache, (void *)article_header.content_len);
-	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod);
-	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded);
+	wiki_cache_dealloc(value_cache, (void *)article_header.title, &article_header.title);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_name, &article_header.server_name);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4, &article_header.server_ipv4);
+	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv6, &article_header.server_ipv6);
+	wiki_cache_dealloc(value_cache, (void *)article_header.generator, &article_header.generator);
+	wiki_cache_dealloc(value_cache, (void *)article_header.content_len, &article_header.content_len);
+	wiki_cache_dealloc(value_cache, (void *)article_header.lastmod, &article_header.lastmod);
+	wiki_cache_dealloc(value_cache, (void *)article_header.downloaded, &article_header.downloaded);
 
 	wiki_cache_destroy(value_cache);
-
 	wiki_cache_destroy(content_cache);
 
 	fail:

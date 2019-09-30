@@ -20,6 +20,7 @@ typedef void (*wiki_cache_dtor_t)(void *);
 struct active_ptr_ctx
 {
 	void *ptr_addr;
+	int in_cache;
 	void *obj_addr;
 	off_t obj_offset;
 	off_t ptr_offset;

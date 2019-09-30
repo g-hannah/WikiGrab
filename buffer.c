@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "buffer.h"
+#include "wikigrab.h"
 
 static inline void
 __buf_reset_head(buf_t *buf)
@@ -184,7 +185,6 @@ buf_append_ex(buf_t *buf, char *str, size_t bytes)
 	if (strlen(str) < bytes)
 		return -1;
 
-	size_t new_size = (buf->buf_size + bytes);
 	size_t slack = buf_slack(buf);
 
 	if (bytes > slack)
@@ -252,7 +252,6 @@ buf_read_fd(int fd, buf_t *buf, size_t bytes)
 	size_t toread = bytes;
 	ssize_t n = 0;
 	ssize_t total_read = 0;
-	size_t buf_size = buf->buf_size;
 	size_t slack = buf_slack(buf);
 
 	if (bytes <= 0)

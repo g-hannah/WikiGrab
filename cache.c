@@ -11,7 +11,7 @@
 static inline void *
 __wiki_cache_object(wiki_cache_t *cachep, int index)
 {
-	return (void *)((char *)cachep->cache + (index * cachep->obj_size));
+	return (void *)((char *)cachep->cache + (index * cachep->objsize));
 }
 
 static inline off_t
@@ -23,14 +23,15 @@ __wiki_cache_object_offset(wiki_cache_t *cachep, void *object)
 static inline int
 __wiki_cache_object_index(wiki_cache_t *cachep, void *object)
 {
-	return (int)(__wiki_cache_object_offset(cachep, object) / cachep->obj_size);
+	return (int)(__wiki_cache_object_offset(cachep, object) / cachep->objsize);
 }
 
 static inline int
 __addr_in_cache(wiki_cache_t *cachep, void *addr)
 {
-	return ((unsigned long)addr >= (unsigned long)cachep->cache
-		&& (unsigned long)addr < (unsigned long)((char *)cachep->cache + (cachep->capacity * cachep->obj_size)));
+	int __in_cache = ((unsigned long)addr >= (unsigned long)cachep->cache && (unsigned long)addr < (unsigned long)((char *)cachep->cache + (cachep->capacity * cachep->objsize)));
+
+	return __in_cache;
 }
 
 #define WIKI_CACHE_SAVE_ACTIVE_PTR(c, o, p)\
@@ -42,7 +43,7 @@ do {\
 	__ap_ctx = &((c)->active_ptrs[__nr_active]);\
 	__ap_ctx->obj_offset = __wiki_cache_object_offset((c), (o));\
 	__ap_ctx->obj_addr = (void *)(o);\
-	if (__i_c)\
+	if (___i_c)\
 		__ap_ctx->ptr_offset = (off_t)((char *)(p) - (char *)cachep->cache);\
 	else\
 		__ap_ctx->ptr_offset = (off_t)0;\
@@ -178,13 +179,10 @@ wiki_cache_obj_used(wiki_cache_t *cachep, void *obj)
 {
 	int idx;
 	int capacity;
-	size_t objsize = cachep->objsize;
 	unsigned char *bm = cachep->free_bitmap;
-	void *cache = cachep->cache;
 
 	capacity = cachep->capacity;
 	idx = __wiki_cache_object_index(cachep, obj);
-
 	assert(idx < capacity);
 
 	bm += (idx >> 3);
@@ -210,8 +208,6 @@ wiki_cache_create(char *name,
 	wiki_cache_t	*cachep = malloc(sizeof(wiki_cache_t));
 	int capacity = (WIKI_CACHE_SIZE / size);
 	int	i;
-	void *obj = NULL;
-	void *cache = NULL;
 	uint16_t bitmap_size;
 
 	assert(cachep);
@@ -244,11 +240,9 @@ wiki_cache_create(char *name,
 		cachep->free_bitmap[i] = 0;
 
 	if (!(cachep->active_ptrs = calloc(capacity, sizeof(struct active_ptr_ctx))))
-		goto out_release_mem;
+		goto fail_release_mem;
 
 	assert(cachep->active_ptrs);
-
-	cache = cachep->cache;
 
 	if (ctor)
 	{
@@ -343,16 +337,12 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 {
 	assert(cachep);
 
-	void *cache = cachep->cache;
 	void *slot = NULL;
 	int idx = __wiki_cache_next_free_idx(cachep);
-	size_t objsize = cachep->objsize;
-	size_t cache_size = cachep->cache_size;
 	uint16_t old_bitmap_size = cachep->bitmap_size;
 	uint16_t new_bitmap_size;
 	int old_capacity = cachep->capacity;
 	int new_capacity = 0;
-	int added_capacity = 0;
 	int i;
 	void *old_cache;
 	void *active_ptr_addr = ptr_addr;
@@ -360,7 +350,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 	int in_cache;
 	unsigned char *byteptr;
 
-	if (idx != -1 && idx < old_capacity && wr_cache_nr_used(cachep) < old_capacity)
+	if (idx != -1 && idx < old_capacity && wiki_cache_nr_used(cachep) < old_capacity)
 	{
 		slot = __wiki_cache_object(cachep, idx);
 
@@ -410,7 +400,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 
 		cachep->capacity = new_capacity;
 		cachep->nr_free += (new_capacity - old_capacity);
-		cachep->cache_size = (new_capacity * cachep->obj_size);
+		cachep->cache_size = (new_capacity * cachep->objsize);
 		cachep->bitmap_size = new_bitmap_size;
 
 		idx = __wiki_cache_next_free_idx(cachep);
@@ -441,6 +431,8 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		free(cachep);
 		cachep = NULL;
 	}
+
+	return NULL;
 }
 
 /**
@@ -465,7 +457,7 @@ wiki_cache_dealloc(wiki_cache_t *cachep, void *slot, void *ptr_addr)
 }
 
 static void *
-__wiki_cache_get_object_owner(cachep, obj)
+__wiki_cache_get_object_owner(wiki_cache_t *cachep, void *obj)
 {
 	int i;
 	int nr_active = cachep->nr_active_ptrs;
@@ -475,7 +467,7 @@ __wiki_cache_get_object_owner(cachep, obj)
 	for (i = 0; i < nr_active; ++i)
 	{
 		if (*((unsigned long *)ap_ctx->ptr_addr) == (unsigned long)obj)
-			return ap_ctx->ptr_addr;
+			return (void *)ap_ctx->ptr_addr;
 	}
 
 	return NULL;
