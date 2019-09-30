@@ -114,6 +114,7 @@ __remove_html_tags(buf_t *buf)
 	char *savep;
 	char *tail = buf->buf_tail;
 	size_t range;
+	off_t poff;
 
 	savep = buf->buf_head;
 
@@ -157,6 +158,7 @@ __remove_html_tags(buf_t *buf)
 					range = (p - savep);
 
 					buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+					tail = buf->buf_tail;
 					p = savep;
 				}
 
@@ -184,7 +186,10 @@ __remove_html_tags(buf_t *buf)
 			|| !strncmp("</ul", p, 4)
 			|| !strncmp("</pre", p, 5))
 			{
+				poff = (off_t)(p - buf->buf_head);
 				buf_shift(buf, (off_t)(p - buf->buf_head), (size_t)1);
+				tail = buf->buf_tail;
+				p = (buf->buf_head + poff);
 				strncpy(p, "\n", 1);
 				++p;
 			}
@@ -281,8 +286,8 @@ __remove_html_encodings(buf_t *buf)
 		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 		buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
-		p = savep;
 		tail = buf->buf_tail;
+		p = savep;
 	}
 }
 
@@ -334,10 +339,8 @@ __replace_html_entities(buf_t *buf)
 			++p;
 
 			buf_collapse(buf, (off_t)(savep - buf->buf_head), (p - savep));
-
-			savep = p;
-
 			tail = buf->buf_tail;
+			savep = p;
 		}
 	}
 	return;
@@ -353,6 +356,7 @@ __remove_garbage(buf_t *buf)
 	char *tail = buf->buf_tail;
 	size_t range;
 
+	fprintf(stderr, "DEFAULT_MAX_LINE_SIZE * 2 == %lu\n", (size_t)DEFAULT_MAX_LINE_SIZE * 2);
 	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
 	p = savep = buf->buf_head;
 
@@ -400,8 +404,8 @@ __remove_garbage(buf_t *buf)
 		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
 #endif
 		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
-		savep = p;
 		tail = buf->buf_tail;
+		savep = p;
 	}
 
 	buf_destroy(&copy_buf);
@@ -906,21 +910,18 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 			break;
 
 		savep = start;
-
 		end = strstr(savep, close_pattern);
 
 		if (!end || end >= tail)
 			break;
 
 		savep = end;
-
 		end = memchr(savep, 0x3e, (tail - savep));
 
 		if (!end)
 			break;
 
 		++end;
-
 		content = wiki_cache_alloc(cachep, &content);
 
 		if (!content)
@@ -1101,13 +1102,23 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 
 	buf_collapse(&tmp_buf, (off_t)0, (p - tmp_buf.buf_head));
 
-	if (__get_all(cachep, &tmp_buf, "<p", "</p") < 0)
-		goto fail;
-
 	if (__get_all(cachep, &tmp_buf, "<ul", "</ul") < 0)
 		goto fail;
 
+	if (__get_all(cachep, &tmp_buf, "<td", "</td") < 0)
+		goto fail;
+/*
 	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
+		goto fail;
+*/
+
+	if (__get_all(cachep, &tmp_buf, "<p", "</p") < 0)
+		goto fail;
+
+	if (__get_all(cachep, &tmp_buf, "<h1", "</h1") < 0)
+		goto fail;
+
+	if (__get_all(cachep, &tmp_buf, "<dl", "</dl") < 0)
 		goto fail;
 
 	out:
@@ -1852,7 +1863,7 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 	/*
-	 * Sort all the <p>,<ul>,<table>, etc based on offsetes
+	 * Sort all the <p>,<ul>,<table>, etc based on offsets
 	 * from the start of the extracted area data.
 	 */
 	qsort((void *)content_cache->cache,
