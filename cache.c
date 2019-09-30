@@ -6,6 +6,89 @@
 #include "http.h"
 #include "wikigrab.h"
 
+#define BITS_PER_CHAR (sizeof(char) * 8)
+
+static inline void *
+__wiki_cache_object(wiki_cache_t *cachep, int index)
+{
+	return (void *)((char *)cachep->cache + (index * cachep->obj_size));
+}
+
+static inline off_t
+__wiki_cache_object_offset(wiki_cache_t *cachep, void *object)
+{
+	return (off_t)((char *)object - (char *)cachep->cache);
+}
+
+static inline int
+__wiki_cache_object_index(wiki_cache_t *cachep, void *object)
+{
+	return (int)(__wiki_cache_object_offset(cachep, object) / cachep->obj_size);
+}
+
+static inline int
+__addr_in_cache(wiki_cache_t *cachep, void *addr)
+{
+	return ((unsigned char)addr >= (unsigned char)cachep->cache
+		&& (unsigned char)addr < (unsigned char)((char *)cachep->cache + (cachep->capacity * cachep->obj_size)));
+}
+
+#define WIKI_CACHE_SAVE_ACTIVE_PTR(c, o, p)\
+do {\
+	int ___i_c = __addr_in_cache((c), (p));\
+	int __nr_active = (c)->nr_active_ptrs;\
+	assert(__nr_active < (c)->capacity);\
+	struct active_ptr_ctx *__ap_ctx;\
+	__ap_ctx = &((c)->active_ptrs[__nr_active]);\
+	__ap_ctx->obj_offset = __wiki_cache_object_offset((c), (o));\
+	__ap_ctx->obj_addr = (void *)(o);\
+	if (__i_c)\
+		__ap_ctx->ptr_offset = (off_t)((char *)(p) - (char *)cachep->cache);\
+	else\
+		__ap_ctx->ptr_offset = (off_t)0;\
+	__ap_ctx->ptr_addr = (p);\
+	++((c)->nr_active_ptrs);\
+} while (0)
+
+#define WIKI_CACHE_REMOVE_ACTIVE_PTR(c, p)\
+do {\
+	int __nr_active = (c)->nr_active_ptrs;\
+	int __i;\
+	int __k;\
+	struct active_ptr_ctx *__ap_ctx;\
+	assert(__nr_active < (c)->capacity);\
+	__ap_ctx = &((c)->active_ptrs[0]);\
+	for (__i = 0; __i < __nr_active; ++__i)\
+	{\
+		if (__ap_ctx->ptr_addr == (p))\
+		{\
+			for (__k = __i; __k < (__nr_active - 1); ++__k)\
+			{\
+				memcpy(&(c)->active_ptrs[__k], &(c)->active_ptrs[__k+1], sizeof(struct active_ptr_ctx));\
+			}\
+			memset(&(c)->active_ptrs[__k], 0, sizeof(struct active_ptr_ctx));\
+			--((c)->nr_active_ptrs);\
+		}\
+		++__ap_ctx;\
+	}\
+} while (0)
+
+#define WIKI_CACHE_ADJUST_ACTIVE_PTRS(c)\
+do {\
+	int __nr_active = (c)->nr_active_ptrs;\
+	int __i;\
+	struct active_ptr_ctx *__ap_ctx;\
+	assert(__nr_active < (c)->capacity);\
+	__ap_ctx = &((c)->active_ptrs[0]);\
+	for (__i = 0; __i < __nr_active; ++__i)\
+	{\
+		if (__ap_ctx->in_cache)\
+			__ap_ctx->ptr_addr = (void *)((char *)(c)->cache + __ap_ctx->ptr_offset);\
+		*((unsigned long *)__ap_ctx->ptr_addr) = (unsigned long)((char *)(c)->cache + __ap_ctx->obj_offset);\
+		++__ap_ctx;\
+	}\
+} while (0)
+
 /**
  * __wiki_cache_next_free_idx - get index of next free object
  * @cachep: pointer to the metadata cache structure
@@ -16,29 +99,32 @@ static inline int __wiki_cache_next_free_idx(wiki_cache_t *cachep)
 	unsigned char bit = 1;
 	int idx = 0;
 	int capacity = cachep->capacity;
-	uint16_t bitmap_size = cachep->bitmap_size;
 
-	while (bm && (*bm & bit))
+	while (1)
 	{
-		bit <<= 1;
-
-		++idx;
-
-		if (!bit)
+		while (*bm & bit)
 		{
-			++bm;
-			bit = 1;
-			--bitmap_size;
-
-			if (!bitmap_size) /* No free space remains */
-				return -1;
+			bit <<= 1;
+			++idx;
 		}
 
 		if (idx >= capacity)
 			return -1;
+
+		if (!bit)
+		{
+			bit = 1;
+			++bm;
+		}
+		else
+		if (*bm & bit)
+		{
+			assert(idx < capacity);
+			return idx;
+		}
 	}
 
-	return idx;
+	return -1;
 }
 
 /**
@@ -96,20 +182,11 @@ wiki_cache_obj_used(wiki_cache_t *cachep, void *obj)
 	void *cache = cachep->cache;
 
 	capacity = cachep->capacity;
-	idx = (((char *)obj - (char *)cache) / objsize);
+	idx = __wiki_cache_object_index(cachep, obj);
 
-	/*
-	 * Then the obj belongs to another cache in the linked list.
-	 */
 	if (idx > capacity)
 		return -1;
 
-	/*
-	 * If the object is the, say, 10th object,
-	 * then bit 9 represents it, so go up
-	 * 9/8 bytes = 1 byte; then move up the
-	 * remaining bit.
-	 */
 	bm += (idx >> 3);
 
 	return (*bm & (1 << (idx & 7))) ? 1 : 0;
@@ -137,18 +214,32 @@ wiki_cache_create(char *name,
 	void *cache = NULL;
 	size_t bitmap_size;
 
+	assert(cachep);
+
 	clear_struct(cachep);
 
 	cachep->objsize = size;
-	bitmap_size = (capacity / 8);
-	if (capacity & 0x7)
+	bitmap_size = (capacity / BITS_PER_CHAR);
+
+	if (capacity & (BITS_PER_CHAR - 1))
 		++bitmap_size;
 
 	if (!(cachep->cache = calloc(WIKI_CACHE_SIZE, 1)))
-		return NULL;
+		goto fail_release_mem;
+
+	assert(cachep->cache);
 
 	if (!(cachep->free_bitmap = calloc(bitmap_size, 1)))
-		return NULL;
+		goto fail_release_mem;
+
+	assert(cachep->free_bitmap;
+
+	if (!(cachep->active_ptrs = calloc(capacity, sizeof(struct active_ptr_ctx))))
+		goto out_release_mem;
+
+	assert(cachep->active_ptrs);
+
+	cachep->nr_active_ptrs = 0;
 
 	cache = cachep->cache;
 
@@ -186,6 +277,25 @@ wiki_cache_create(char *name,
 #endif
 
 	return cachep;
+
+	fail_release_mem:
+
+	if (cachep)
+	{
+		if (cachep->cache)
+			free(cachep->cache);
+
+		if (cachep->free_bitmap)
+			free(cachep->free_bitmap);
+
+		if (cachep->active_ptrs)
+			free(cachep->active_ptrs);
+
+		free(cachep);
+		cachep = NULL;
+	}
+
+	return NULL;
 }
 
 /**
@@ -224,7 +334,7 @@ wiki_cache_destroy(wiki_cache_t *cachep)
  * @cachep: pointer to the metadata cache structure
  */
 void *
-wiki_cache_alloc(wiki_cache_t *cachep)
+wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 {
 	assert(cachep);
 
@@ -233,98 +343,102 @@ wiki_cache_alloc(wiki_cache_t *cachep)
 	int idx = __wiki_cache_next_free_idx(cachep);
 	size_t objsize = cachep->objsize;
 	size_t cache_size = cachep->cache_size;
-	uint16_t bitmap_size = cachep->bitmap_size;
+	uint16_t old_bitmap_size = cachep->bitmap_size;
+	uint16_t new_bitmap_size;
 	int old_capacity = cachep->capacity;
 	int new_capacity = 0;
 	int added_capacity = 0;
 	int slack;
 	int i;
+	void *old_cache;
+	void *active_ptr_addr = ptr_addr;
+	off_t active_ptr_offset;
+	int in_cache;
+	unsigned char *byteptr;
 
-
-	if (idx != -1)
+	if (idx != -1 && idx < old_capacity && wr_cache_nr_used(cachep) < old_capacity)
 	{
-		__wiki_cache_mark_used(cachep, idx);
-
-		WIKI_CACHE_DEC_FREE(cachep);
-
 		slot = (void *)((char *)cache + (idx * objsize));
+
+		__wiki_cache_mark_used(cachep, idx);
+		WIKI_CACHE_DEC_FREE(cachep);
+		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, active_ptr_addr);
 
 		return slot;
 	}
 	else
 	{
-#ifdef DEBUG
-		printf(
-			"Not enough cache memory -- extending the cache\n"
-			"current cache size = %lu bytes\n"
-			"changing to size = %lu bytes\n"
-			"(extending ->free_bitmap too from %hu bytes to %hu bytes)\n",
-			cache_size,
-			cache_size * 2,
-			bitmap_size, bitmap_size * 2);
-#endif
-
-		if (!(cachep->cache = realloc(cachep->cache, cache_size * 2)))
-		{
-			fprintf(stderr, "wiki_cache_alloc: realloc error for ->cache (%s)\n", strerror(errno));
-			goto fail;
-		}
-
-		if (!(cachep->free_bitmap = realloc(cachep->free_bitmap, bitmap_size * 2)))
-		{
-			fprintf(stderr, "wiki_cache_alloc: realloc error for ->free_bitmap (%s)\n", strerror(errno));
-			goto fail;
-		}
-
-		unsigned char *bm = (cachep->free_bitmap + cachep->bitmap_size);
-
-		for (i = 0; i < bitmap_size; ++i)
-			*bm++ = 0;
-
 		new_capacity = (old_capacity * 2);
-		added_capacity = new_capacity;
+		new_bitmap_size = (old_bitmap_size * 2);
 
-		slack = ((cache_size % objsize) * 2);
-		if (slack > objsize)
+		old_cache = cachep->cache;
+
+		in_cache = __addr_in_cache(cachep, active_ptr_addr);
+
+		if (in_cache)
+			active_ptr_offset = (off_t)((char *)active_ptr_addr - (char *)cachep->cache);
+
+		if (!(cachep->cache = realloc(cachep->cache, new_capacity)))
+			goto fail_release_mem;
+
+
+
+		if (old_cache != cachep->cache)
 		{
-			while (slack > objsize)
+			if (in_cache)
 			{
-				++new_capacity;
-				slack -= objsize;
+				active_ptr_addr = (void *)((char *)cachep->cache + active_ptr_offset);
 			}
+
+			WIKI_CACHE_ADJUST_ACTIVE_PTRS(cachep);
 		}
 
-		added_capacity = (new_capacity - old_capacity);
+		if (!(cachep->free_bitmap = realloc(cachep->free_bitmap, new_bitmap_size)))
+			goto fail_release_mem;
+
+		byteptr = cachep->free_bitmap;
+		for (i = old_bitmap_size; i < new_bitmap_size; ++i)
+			byteptr[i] = 0;
 
 		if (cachep->ctor)
 		{
-			void *obj = (void *)((char *)cachep->cache + (old_capacity * objsize));
-			for (i = 0; i < added_capacity; ++i)
-			{
-				cachep->ctor(obj);
-				obj = (void *)((char *)obj + objsize);
-			}
+			for (i = old_capacity; i < new_capacity; ++i)
+				cachep->ctor(__wiki_cache_object(cachep, i));
 		}
 
-		cachep->bitmap_size *= 2;
-		cachep->cache_size *= 2;
-		cachep->nr_free += added_capacity;
 		cachep->capacity = new_capacity;
+		cachep->nr_free += new_capacity;
+		cachep->cache_size  = (new_capacity * cachep->obj_size);
+		cachep->bitmap_size = new_bitmap_size;
 
 		idx = __wiki_cache_next_free_idx(cachep);
+		assert(idx >= 0);
+		assert(idx < new_capacity);
 
+		slot = __wiki_cache_object(cachep, idx);
 		__wiki_cache_mark_used(cachep, idx);
-
 		WIKI_CACHE_DEC_FREE(cachep);
+		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, active_ptr_addr);
 
-		cache = cachep->cache;
-
-		slot = (void *)((char *)cache + (idx * objsize));
 		return slot;
 	}
 
-	fail:
-	return NULL;
+	fail_release_mem:
+
+	if (cachep)
+	{
+		if (cachep->cache)
+			free(cachep->cache);
+
+		if (cachep->free_bitmap)
+			free(cachep->free_bitmap);
+
+		if (cachep->active_ptrs)
+			free(cachep->active_ptrs);
+
+		free(cachep);
+		cachep = NULL;
+	}
 }
 
 /**
