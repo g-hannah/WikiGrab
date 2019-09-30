@@ -24,6 +24,9 @@ static char PROG_NAME[DEFAULT_PROG_NAME_MAX];
 wiki_cache_t *http_hcache;
 static http_header_t *cookie;
 
+int SOCK_SET_FLAG_ONCE;
+int SOCK_SSL_SET_FLAG_ONCE;
+
 static void
 __noret usage(int status)
 {
@@ -142,6 +145,9 @@ main(int argc, char *argv[])
 
 	if (argc < 2)
 		usage(EXIT_FAILURE);
+
+	SOCK_SET_FLAG_ONCE = 0;
+	SOCK_SSL_SET_FLAG_ONCE = 0;
 
 	get_runtime_options(argc, argv);
 
