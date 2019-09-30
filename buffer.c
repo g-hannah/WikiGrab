@@ -294,11 +294,8 @@ buf_read_socket(int sock, buf_t *buf, size_t toread)
 
 	slack = buf_slack(buf);
 
-	if (!toread)
-		toread = slack;
-	else
-	if (toread > buf->buf_size)
-		buf_extend(buf, (toread - buf->buf_size));
+	if (toread > slack)
+		buf_extend(buf, __ALIGN((toread - slack)));
 
 	while (1)
 	{
@@ -329,13 +326,9 @@ buf_read_socket(int sock, buf_t *buf, size_t toread)
 		{
 			__buf_pull_tail(buf, (size_t)n);
 
-			toread -= n;
 			slack -= n;
 			total += n;
 
-			if (!toread)
-				break;
-			else
 			if (!slack)
 			{
 				slack += buf->buf_size;
@@ -375,11 +368,8 @@ buf_read_tls(SSL *ssl, buf_t *buf, size_t toread)
 
 	slack = buf_slack(buf);
 
-	if (!toread)
-		toread = slack;
-	else
-	if (toread > buf->buf_size)
-		buf_extend(buf, (toread - buf->buf_size));
+	if (toread > slack)
+		buf_extend(buf, __ALIGN((toread - slack)));
 
 	while (1)
 	{
@@ -429,13 +419,9 @@ buf_read_tls(SSL *ssl, buf_t *buf, size_t toread)
 		{
 			__buf_pull_tail(buf, (size_t)n);
 
-			toread -= n;
 			slack -= n;
 			total += n;
 
-			if (!toread)
-				break;
-			else
 			if (!slack)
 			{
 				slack += buf->buf_size;
