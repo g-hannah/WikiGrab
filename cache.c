@@ -29,8 +29,8 @@ __wiki_cache_object_index(wiki_cache_t *cachep, void *object)
 static inline int
 __addr_in_cache(wiki_cache_t *cachep, void *addr)
 {
-	return ((unsigned char)addr >= (unsigned char)cachep->cache
-		&& (unsigned char)addr < (unsigned char)((char *)cachep->cache + (cachep->capacity * cachep->obj_size)));
+	return ((unsigned long)addr >= (unsigned long)cachep->cache
+		&& (unsigned long)addr < (unsigned long)((char *)cachep->cache + (cachep->capacity * cachep->obj_size)));
 }
 
 #define WIKI_CACHE_SAVE_ACTIVE_PTR(c, o, p)\
