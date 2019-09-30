@@ -8,6 +8,8 @@
 
 #define clear_struct(s) memset((s), 0, sizeof((*s)))
 
+#define __ALIGN(b) (((b) + 0xf) & ~(0xf))
+
 #define DEFAULT_TMP_BUF_SIZE 16384
 #define DEFAULT_MAX_LINE_SIZE 1024
 
