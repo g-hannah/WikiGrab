@@ -887,6 +887,8 @@ __get_tag_field(buf_t *buf, const char *tag, const char *field)
 	return tag_content;
 }
 
+static content_t *content = NULL;
+
 static int
 __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char *close_pattern)
 {
@@ -899,7 +901,6 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 	char *tail = buf->buf_tail;
 	char *start;
 	char *end;
-	content_t *content = NULL;
 	size_t len;
 
 	while(1)
@@ -944,9 +945,12 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 		}
 
 		assert((end - start) < content->alloc_len);
-		strncpy(content->data, start, (end - start));
+		strncpy(content->data, start, len);
 		content->data_len = len;
 		content->off = (off_t)(start - buf->buf_head);
+		buf_collapse(buf, (off_t)(start - buf->buf_head), (end - start));
+		end = start;
+		tail = buf->buf_tail;
 
 		savep = end;
 
@@ -1102,23 +1106,13 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_
 
 	buf_collapse(&tmp_buf, (off_t)0, (p - tmp_buf.buf_head));
 
-	if (__get_all(cachep, &tmp_buf, "<ul", "</ul") < 0)
-		goto fail;
-
-	if (__get_all(cachep, &tmp_buf, "<td", "</td") < 0)
-		goto fail;
-/*
-	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
-		goto fail;
-*/
-
 	if (__get_all(cachep, &tmp_buf, "<p", "</p") < 0)
 		goto fail;
 
-	if (__get_all(cachep, &tmp_buf, "<h1", "</h1") < 0)
+	if (__get_all(cachep, &tmp_buf, "<ul", "</ul") < 0)
 		goto fail;
 
-	if (__get_all(cachep, &tmp_buf, "<dl", "</dl") < 0)
+	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
 		goto fail;
 
 	out:
