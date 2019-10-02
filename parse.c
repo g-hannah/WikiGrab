@@ -934,10 +934,10 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 #ifdef DEBUG
 			printf("reallocating memory @ %p\n", content->data);
 #endif
-			if (!(content->data = realloc(content->data, content->alloc_len * 2)))
+			if (!(content->data = realloc(content->data, len+1)))
 				goto fail;
 
-			content->alloc_len *= 2;
+			content->alloc_len = len+1;
 #ifdef DEBUG
 			printf("memory is now at @ %p\n", content->data);
 #endif
@@ -1849,10 +1849,6 @@ extract_wiki_article(buf_t *buf)
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
 	//__remove_braces(buf);
-
-#ifdef DEBUG
-	fprintf(stderr, "%s\n", buf->buf_head);
-#endif
 
 	if (__extract_area(content_cache, buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
