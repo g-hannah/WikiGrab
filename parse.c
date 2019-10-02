@@ -356,7 +356,6 @@ __remove_garbage(buf_t *buf)
 	char *tail = buf->buf_tail;
 	size_t range;
 
-	fprintf(stderr, "DEFAULT_MAX_LINE_SIZE * 2 == %lu\n", (size_t)DEFAULT_MAX_LINE_SIZE * 2);
 	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
 	p = savep = buf->buf_head;
 
@@ -967,10 +966,9 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 }
 
 static int
-__extract_area(wiki_cache_t *cachep, buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
+__extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char *const close_pattern)
 {
 	assert(sbuf);
-	assert(dbuf);
 	assert(open_pattern);
 	assert(close_pattern);
 
@@ -1849,11 +1847,11 @@ extract_wiki_article(buf_t *buf)
 	//__remove_braces(buf);
 
 #ifdef DEBUG
-	printf("Calling __extract_area(content_cache(%p), buf(%p), &content_buf(%p), string, string)\n",
+	printf("Calling __extract_area(content_cache(%p), buf(%p), string, string)\n",
 			content_cache, buf, &content_buf);
 #endif
 
-	if (__extract_area(content_cache, buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
+	if (__extract_area(content_cache, buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
 
 	/*
