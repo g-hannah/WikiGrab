@@ -1090,6 +1090,10 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char
 	buf_clear(&tmp_buf);
 	buf_append_ex(&tmp_buf, save_start, (save_close - save_start));
 
+#ifdef DEBUG
+	fprintf(stderr, "%s\n", tmp_buf.buf_head);
+#endif
+
 	/*
 	 * There is a lot of stuff we're not interested in before
 	 * the actual first paragraph within the <div class=\"mw-content-text\"...>
@@ -1847,8 +1851,7 @@ extract_wiki_article(buf_t *buf)
 	//__remove_braces(buf);
 
 #ifdef DEBUG
-	printf("Calling __extract_area(content_cache(%p), buf(%p), string, string)\n",
-			content_cache, buf, &content_buf);
+	fprintf(stderr, "%s\n", buf->buf_head);
 #endif
 
 	if (__extract_area(content_cache, buf, "<div id=\"mw-content-text\"", "</div") < 0)
