@@ -1333,9 +1333,11 @@ __parse_maths_expressions(buf_t *buf)
 	char *exp_start;
 	char *exp_end;
 	char *savep;
-	char *p;
 	char *tail = buf->buf_tail;
 	buf_t tmp;
+	size_t elen;
+	size_t tlen;
+	off_t sp_off;
 
 	savep = buf->buf_head;
 	buf_init(&tmp, 1024);
@@ -1343,26 +1345,50 @@ __parse_maths_expressions(buf_t *buf)
 	while (1)
 	{
 		exp_start = memchr(savep, '$', (tail - savep));
-		savep = (exp_start + 1);
-		exp_end = memchr(savep, '$', (tail - savep));
+
+		if (!exp_start || exp_start >= tail)
+			break;
+
+		savep = exp_start;
+		exp_end = memchr(exp_start, '$', (tail - exp_start));
+
+		if (!exp_end || exp_end >= tail)
+			break;
+
 		++exp_end;
+
+		elen = (exp_end - exp_start);
 
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 
-		while ((p = strstr(tmp.buf_head, "\\in")))
-		{
-			if (p >= tmp.buf_tail)
-				break;
-
-			memcpy(p, "\xe2\x88\x88", 3);
-		}
-
+		buf_replace(&tmp, "\\in", "\xe2\x88\x88");
 		buf_replace(&tmp, "{", "");
 		buf_replace(&tmp, "}", "");
 
-		break;
+		tlen = tmp.data_len;
+		if (elen > tlen)
+		{
+			strncpy(exp_start, tmp.buf_head, tlen);
+			exp_start += tlen;
+			buf_collapse(buf, (off_t)(exp_start - buf->buf_head), (elen - tlen));
+			tail = buf->buf_tail;
+		}
+		else
+		{
+			sp_off = (off_t)(savep - buf->buf_head);
+			buf_shift(buf, (off_t)(exp_start - buf->buf_head), (tlen - elen));
+			savep = (buf->buf_head + sp_off);
+			exp_start = savep;
+			tail = buf->buf_tail;
+			strncpy(exp_start, tmp.buf_head, tlen);
+			exp_start += tlen;
+		}
+
+		savep = exp_start;
+		buf_clear(&tmp);
 	}
 
+	buf_destroy(&tmp);
 	return 0;
 }
 
