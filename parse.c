@@ -1326,6 +1326,35 @@ __remove_excess_nl(buf_t *buf)
 }
 
 int
+__parse_maths_expressions(buf_t *buf)
+{
+	assert(buf);
+
+	char *brace_open;
+	char *brace_final;
+	char *savep;
+	char *p;
+	char *tail = buf->buf_tail;
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		brace_open = memchr(savep, '{', (tail - p));
+		savep = brace_open;
+
+		while (1)
+		{
+			brace_final = memchr(savep, '}', (tail - savep));
+			
+		}
+		break;
+	}
+
+	return 0;
+}
+
+int
 extract_wiki_article(buf_t *buf)
 {
 	int out_fd = -1;
