@@ -1330,24 +1330,36 @@ __parse_maths_expressions(buf_t *buf)
 {
 	assert(buf);
 
-	char *brace_open;
-	char *brace_final;
+	char *exp_start;
+	char *exp_end;
 	char *savep;
 	char *p;
 	char *tail = buf->buf_tail;
+	buf_t tmp;
 
 	savep = buf->buf_head;
+	buf_init(&tmp, 1024);
 
 	while (1)
 	{
-		brace_open = memchr(savep, '{', (tail - p));
-		savep = brace_open;
+		exp_start = memchr(savep, '$', (tail - savep));
+		savep = (exp_start + 1);
+		exp_end = memchr(savep, '$', (tail - savep));
+		++exp_end;
 
-		while (1)
+		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
+
+		while ((p = strstr(tmp.buf_head, "\\in")))
 		{
-			brace_final = memchr(savep, '}', (tail - savep));
-			
+			if (p >= tmp.buf_tail)
+				break;
+
+			memcpy(p, "\xe2\x88\x88", 3);
 		}
+
+		buf_replace(&tmp, "{", "");
+		buf_replace(&tmp, "}", "");
+
 		break;
 	}
 
