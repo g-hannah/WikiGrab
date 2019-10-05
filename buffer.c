@@ -631,9 +631,14 @@ buf_replace(buf_t *buf, char *pattern, char *with)
 	assert(with);
 
 	size_t pattern_len = strlen(pattern);
-	size_t replace_len = strlen(with);
+	size_t replace_len;
 	char *p;
 	off_t poff;
+
+	if (!with || with == "")
+		replace_len = (size_t)0;
+	else
+		replace_len = strlen(with);
 
 	p = strstr(buf->buf_head, pattern);
 
