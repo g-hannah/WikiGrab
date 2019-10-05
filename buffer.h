@@ -28,6 +28,7 @@ void buf_shift(buf_t *, off_t, size_t) __nonnull((1));
 int buf_extend(buf_t *, size_t) __nonnull((1)) __wur;
 int buf_append(buf_t *, char *) __nonnull((1,2)) __wur;
 int buf_append_ex(buf_t *, char *, size_t) __nonnull((1,2)) __wur;
+void buf_replace(buf_t *, char *, char *) __nonnull((1,2,3));
 void buf_snip(buf_t *, size_t) __nonnull((1));
 void buf_clear(buf_t *) __nonnull((1));
 
