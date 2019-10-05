@@ -1117,6 +1117,9 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char
 	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
 		goto fail;
 
+	if (__get_all(cachep, &tmp_buf, "<math", "</math") < 0)
+		goto fail;
+
 	out:
 	buf_destroy(&tmp_buf);
 	buf_destroy(&first_part);
