@@ -346,7 +346,6 @@ __replace_html_entities(buf_t *buf)
 	return;
 }
 
-#if 0
 static void
 __remove_garbage(buf_t *buf)
 {
@@ -412,7 +411,6 @@ __remove_garbage(buf_t *buf)
 
 	return;
 }
-#endif
 
 /*
  * buf_shift() could require extending the buffer,
@@ -1104,7 +1102,6 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 	return -1;
 }
 
-#if 0
 static int
 __remove_braces(buf_t *buf)
 {
@@ -1131,6 +1128,9 @@ __remove_braces(buf_t *buf)
  * 9. END
  */
 
+/*
+ * TODO: Use the function __nested_closing_char() to get closing braces
+ */
 	while(1)
 	{
 		p = savep = buf->buf_head;
@@ -1219,7 +1219,6 @@ __remove_braces(buf_t *buf)
 	out:
 	return 0;
 }
-#endif
 
 static void
 __normalise_file_title(buf_t *buf)
@@ -1306,6 +1305,10 @@ __remove_excess_nl(buf_t *buf)
 char *
 __nested_closing_char(char *whence, char *limit, char o, char c)
 {
+	assert(whence);
+	assert(limit);
+	assert(limit > whence);
+
 	char *search_from;
 	char *cur_pos;
 	char *savep;
@@ -1324,7 +1327,7 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 
 		while (1)
 		{
-			cur_pos = memchr(savep, o, (limit - savep));
+			cur_pos = memchr(savep, o, (final - savep));
 			if (!cur_pos)
 				break;
 
@@ -1350,6 +1353,7 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 		final = savep;
 	}
 
+	assert(final);
 	return final;
 }
 
@@ -1461,10 +1465,14 @@ __parse_maths_expressions(buf_t *buf)
 
 		elen = (exp_end - exp_start);
 
+		buf_collapse(buf, (off_t)(exp_end - buf->buf_head), (size_t)1);
+
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 
 		buf_replace(&tmp, "{\\displaystyle", "");
-		buf_replace(&tmp, "\\in", "\xe2\x88\x88");
+		buf_replace(&tmp, "\\in", " \xe2\x88\x88 ");
+		buf_replace(&tmp, "\\backslash", " \\ ");
+		buf_replace(&tmp, "\\{", "{");
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
@@ -1700,8 +1708,8 @@ extract_wiki_article(buf_t *buf)
 	__remove_inline_refs(&content_buf);
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
-	//__remove_garbage(&content_buf);
-	//__remove_braces(&content_buf);
+	__remove_garbage(&content_buf);
+	__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
 
 	/*
