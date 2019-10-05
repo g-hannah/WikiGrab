@@ -622,3 +622,37 @@ buf_copy(buf_t *to, buf_t *from)
 
 	return;
 }
+
+void
+buf_replace(buf_t *buf, char *pattern, char *with)
+{
+	assert(buf);
+	assert(pattern);
+	assert(with);
+
+	size_t pattern_len = strlen(pattern);
+	size_t replace_len = strlen(with);
+	char *p;
+	off_t poff;
+
+	p = strstr(buf->buf_head, pattern);
+
+	if (!p)
+		return;
+
+	if (pattern_len > replace_len)
+	{
+		strncpy(p, with, replace_len);
+		p += replace_len;
+		buf_collapse(buf, (off_t)(p - buf->buf_head), (pattern_len - replace_len));
+	}
+	else
+	{
+		poff = (p - buf->buf_head);
+		buf_shift(buf, (off_t)(p - buf->buf_head), (replace_len - pattern_len));
+		p = (buf->buf_head + poff);
+		strncpy(p, with, replace_len);
+	}
+
+	return;
+}
