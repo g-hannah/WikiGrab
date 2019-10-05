@@ -346,6 +346,7 @@ __replace_html_entities(buf_t *buf)
 	return;
 }
 
+#if 0
 static void
 __remove_garbage(buf_t *buf)
 {
@@ -411,6 +412,7 @@ __remove_garbage(buf_t *buf)
 
 	return;
 }
+#endif
 
 /*
  * buf_shift() could require extending the buffer,
@@ -966,9 +968,10 @@ __get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char
 }
 
 static int
-__extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char *const close_pattern)
+__extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
 {
 	assert(sbuf);
+	assert(dbuf);
 	assert(open_pattern);
 	assert(close_pattern);
 
@@ -1088,37 +1091,7 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char
 	}
 
 	buf_clear(&tmp_buf);
-	buf_append_ex(&tmp_buf, save_start, (save_close - save_start));
-
-#ifdef DEBUG
-	fprintf(stderr, "%s\n", tmp_buf.buf_head);
-#endif
-
-	/*
-	 * There is a lot of stuff we're not interested in before
-	 * the actual first paragraph within the <div class=\"mw-content-text\"...>
-	 * HTML division (such as side menus saying that the article
-	 * is, for example, part of a series on *insert topic*. So find
-	 * the first paragraph and collapse the buffer down to the start.
-	 */
-	p = strstr(tmp_buf.buf_head, "<p");
-
-	if (!p || p >= tmp_buf.buf_tail)
-		goto fail;
-
-	buf_collapse(&tmp_buf, (off_t)0, (p - tmp_buf.buf_head));
-
-	if (__get_all(cachep, &tmp_buf, "<p", "</p") < 0)
-		goto fail;
-
-	if (__get_all(cachep, &tmp_buf, "<ul", "</ul") < 0)
-		goto fail;
-
-	if (__get_all(cachep, &tmp_buf, "<table", "</table") < 0)
-		goto fail;
-
-	if (__get_all(cachep, &tmp_buf, "<math", "</math") < 0)
-		goto fail;
+	buf_append_ex(dbuf, save_start, (save_close - save_start));
 
 	out:
 	buf_destroy(&tmp_buf);
@@ -1131,6 +1104,7 @@ __extract_area(wiki_cache_t *cachep, buf_t *sbuf, char *const open_pattern, char
 	return -1;
 }
 
+#if 0
 static int
 __remove_braces(buf_t *buf)
 {
@@ -1245,6 +1219,7 @@ __remove_braces(buf_t *buf)
 	out:
 	return 0;
 }
+#endif
 
 static void
 __normalise_file_title(buf_t *buf)
@@ -1328,6 +1303,79 @@ __remove_excess_nl(buf_t *buf)
 	return;
 }
 
+/**
+ * __get_outermost_closing - return a pointer to one byte past the closing pattern
+ * @whence: position from which to start search
+ * @opattern: the corresponding open pattern for the enclosing sequence
+ * @cpattern: the closing pattern of which the outermost one is sought
+ */
+char *
+__get_outermost_closing(char *whence, char *opattern, char *cpattern)
+{
+	char *p = whence;
+	char *savep;
+	char *search_from;
+	char *close;
+	int depth = 0;
+	size_t oplen = strlen(opattern);
+	size_t cplen = strlen(cpattern);
+
+	search_from = p;
+	savep = p;
+	close = strstr(search_from, cpattern);
+
+	if (!close)
+		return NULL;
+
+	close += cplen;
+
+	while (1)
+	{
+		savep = search_from;
+
+		while (1)
+		{
+			p = strstr(savep, opattern);
+			if (p)
+			{
+				++depth;
+				savep = (p + oplen);
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		if (!depth)
+			break;
+
+		search_from = savep = close;
+
+		while (depth)
+		{
+			p = strstr(savep, cpattern);
+			if (!p)
+			{
+				if (depth)
+				{
+					fprintf(stderr, "__get_outermost_closing: failed to find required closing pattern\n");
+					return NULL;
+				}
+
+				break;
+			}
+
+			savep = (p + cplen);
+			--depth;
+		}
+
+		close = savep;
+	}
+
+	return close;
+}
+
 int
 __parse_maths_expressions(buf_t *buf)
 {
@@ -1347,26 +1395,24 @@ __parse_maths_expressions(buf_t *buf)
 
 	while (1)
 	{
-		exp_start = memchr(savep, '$', (tail - savep));
+		exp_start = strstr(savep, "{\\displaystyle");
 
 		if (!exp_start || exp_start >= tail)
 			break;
 
 		savep = exp_start;
-		exp_end = memchr(exp_start, '$', (tail - exp_start));
+
+		exp_end = __get_outermost_closing(exp_start+1, "{", "}");
 
 		if (!exp_end || exp_end >= tail)
 			break;
-
-		++exp_end;
 
 		elen = (exp_end - exp_start);
 
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 
+		buf_replace(&tmp, "{\\displaystyle", "");
 		buf_replace(&tmp, "\\in", "\xe2\x88\x88");
-		buf_replace(&tmp, "{", "");
-		buf_replace(&tmp, "}", "");
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
@@ -1552,10 +1598,16 @@ extract_wiki_article(buf_t *buf)
 /*
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
-	//__remove_braces(buf);
 
-	if (__extract_area(content_cache, buf, "<div id=\"mw-content-text\"", "</div") < 0)
+	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
+
+	__get_all(content_cache, &content_buf, "<p", "</p");
+	__get_all(content_cache, &content_buf, "<li", "</li");
+	__get_all(content_cache, &content_buf, "<math", "</math");
+	__get_all(content_cache, &content_buf, "<table", "</table");
+
+	buf_clear(&content_buf);
 
 	/*
 	 * Sort all the <p>,<ul>,<table>, etc based on offsets
@@ -1578,6 +1630,8 @@ extract_wiki_article(buf_t *buf)
 		++cp;
 	}
 
+	__parse_maths_expressions(&content_buf);
+
 #if 0
 	/*
 	 * Mark certain HTML tags so we
@@ -1594,8 +1648,8 @@ extract_wiki_article(buf_t *buf)
 	__remove_inline_refs(&content_buf);
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
-	__remove_garbage(&content_buf);
-	__remove_braces(&content_buf);
+	//__remove_garbage(&content_buf);
+	//__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
 
 	/*
