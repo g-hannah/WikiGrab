@@ -1,3 +1,5 @@
 Handle mathematical encodings, such as {\sqrt {2}},3,\pi \,\!}
 
 Fix bug that is resulting in the article being heavily truncated.
+
+Write function to find any starting-ending (nested) pair of chars (such as, potentially nested, { } sequences)
