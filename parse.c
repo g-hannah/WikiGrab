@@ -1303,6 +1303,57 @@ __remove_excess_nl(buf_t *buf)
 	return;
 }
 
+char *
+__nested_closing_char(char *whence, char *limit, char o, char c)
+{
+	char *search_from;
+	char *cur_pos;
+	char *savep;
+	char *final;
+	int depth = 0;
+
+	search_from = savep = whence;
+	final = memchr(search_from, c, (limit - search_from));
+
+	if (!final)
+		return NULL;
+
+	while (1)
+	{
+		savep = search_from;
+
+		while (1)
+		{
+			cur_pos = memchr(savep, o, (limit - savep));
+			if (!cur_pos)
+				break;
+
+			++depth;
+			savep = cur_pos + 1;
+		}
+
+		if (!depth)
+			break;
+
+		search_from = final + 1;
+		savep = search_from;
+
+		while (depth)
+		{
+			cur_pos = memchr(savep, c, (limit - savep));
+			if (!cur_pos)
+				break;
+			--depth;
+			savep = cur_pos + 1;
+		}
+
+		final = savep;
+	}
+
+	return final;
+}
+
+#if 0
 /**
  * __get_outermost_closing - return a pointer to one byte past the closing pattern
  * @whence: position from which to start search
@@ -1375,6 +1426,7 @@ __get_outermost_closing(char *whence, char *opattern, char *cpattern)
 
 	return close;
 }
+#endif
 
 int
 __parse_maths_expressions(buf_t *buf)
@@ -1402,7 +1454,7 @@ __parse_maths_expressions(buf_t *buf)
 
 		savep = exp_start;
 
-		exp_end = __get_outermost_closing(exp_start+1, "{", "}");
+		exp_end = __nested_closing_char(exp_start+1, buf->buf_tail, '{', '}');
 
 		if (!exp_end || exp_end >= tail)
 			break;
