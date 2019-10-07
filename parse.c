@@ -1475,8 +1475,8 @@ __parse_maths_expressions(buf_t *buf)
 		buf_replace(&tmp, "\\in", " \xe2\x88\x88");
 		buf_replace(&tmp, "\\backslash", " \\ ");
 		buf_replace(&tmp, "\\colon", ":");
-		buf_replace(&tmp, "\\{", "LEFTBRACE");
-		buf_replace(&tmp, "\\}", "RIGHTBRACE");
+		buf_replace(&tmp, "\\{", "{");
+		buf_replace(&tmp, "\\}", "}");
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
@@ -1717,9 +1717,6 @@ extract_wiki_article(buf_t *buf)
 	//__remove_garbage(&content_buf);
 	//__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
-
-	buf_replace(&content_buf, "LEFTBRACE", "{");
-	buf_replace(&content_buf, "RIGHTBRACE", "}");
 
 	/*
  	 * List marks for .txt format will be dealt with
