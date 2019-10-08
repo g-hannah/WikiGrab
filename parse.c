@@ -1444,6 +1444,44 @@ __get_outermost_closing(char *whence, char *opattern, char *cpattern)
 }
 #endif
 
+static void
+__replace_tex(buf_t *buf)
+{
+	assert(buf);
+
+	buf_replace(buf, "\\displaystyle", "");
+	buf_replace(buf, "\\forall", "∀");
+	buf_replace(buf, "\\exists", "∃");
+	buf_replace(buf, "\\leq", "<=");
+	buf_replace(buf, "\\geq", ">=");
+	buf_replace(buf, "\\epsilon", "ε");
+	buf_replace(buf, "\\alpha", "α");
+	buf_replace(buf, "\\Alpha", "Α");
+	buf_replace(buf, "\\beta", "β");
+	buf_replace(buf, "\\Beta", "Β");
+	buf_replace(buf, "\\gamma", "γ");
+	buf_replace(buf, "\\Gamma", "Γ");
+	buf_replace(buf, "\\pi", "π");
+	buf_replace(buf, "\\Pi", "Π");
+	buf_replace(buf, "\\phi", "Φ");
+	buf_replace(buf, "\\varphi", "φ");
+	buf_replace(buf, "\\theta", "θ");
+	buf_replace(buf, "\\cos", "cos");
+	buf_replace(buf, "\\sin", "sin");
+	buf_replace(buf, "\\tan", "tan");
+	buf_replace(buf, "\\cot", "cot");
+	buf_replace(buf, "\\sec", "sec");
+	buf_replace(buf, "\\csc", "csc");
+	buf_replace(buf, "\\infty", "∞");
+	buf_replace(buf, "\\in", " \xe2\x88\x88");
+	buf_replace(buf, "\\backslash", " \\ ");
+	buf_replace(buf, "\\colon", ":");
+	buf_replace(buf, "\\varphi", "ϕ");
+	buf_replace(buf, "\\Rightarrow", "→");
+	buf_replace(buf, "\\quad", " ");
+	buf_replace(buf, "&=", "=");
+}
+
 int
 __parse_maths_expressions(buf_t *buf)
 {
@@ -1479,12 +1517,7 @@ __parse_maths_expressions(buf_t *buf)
 
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 
-		buf_replace(&tmp, "{\\displaystyle", "");
-		buf_replace(&tmp, "\\in", " \xe2\x88\x88");
-		buf_replace(&tmp, "\\backslash", " \\ ");
-		buf_replace(&tmp, "\\colon", ":");
-		buf_replace(&tmp, "\\{", "{");
-		buf_replace(&tmp, "\\}", "}");
+		__replace_tex(&tmp);
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
