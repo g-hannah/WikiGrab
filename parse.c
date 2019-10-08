@@ -1309,6 +1309,14 @@ __remove_excess_nl(buf_t *buf)
 	return;
 }
 
+/**
+ * __nested_closing_char - return a pointer to the final closing character
+ * for example, the correct '}' char to go with its opening '{'
+ * @whence: pointer to the opening char
+ * @limit: pointer to our search limit
+ * @o: the opening character
+ * @c: the closing character
+ */
 char *
 __nested_closing_char(char *whence, char *limit, char o, char c)
 {
