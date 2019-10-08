@@ -134,7 +134,8 @@ __remove_html_tags(buf_t *buf)
 			|| !strncmp(p, "<tbody", 6)
 			|| !strncmp(p, "<tr", 3)
 			|| !strncmp(p, "<td", 3)
-			|| !strncmp(p, "<pre", 4))
+			|| !strncmp(p, "<pre", 4)
+			|| !strncmp(p, "<math", 5))
 			{
 				/*
 				 * We want to keep the tags, but without the classes, styles, etc.
@@ -172,7 +173,8 @@ __remove_html_tags(buf_t *buf)
 			|| !strncmp("</tbody", p, 7)
 			|| !strncmp("</tr", p, 4)
 			|| !strncmp("</td", p, 4)
-			|| !strncmp("</pre", p, 5))
+			|| !strncmp("</pre", p, 5)
+			|| !strncmp("</math", p, 6)) 
 			{
 				savep = ++p;
 				continue;
@@ -184,7 +186,8 @@ __remove_html_tags(buf_t *buf)
 			|| !strncmp("</tr", p, 4)
 			|| !strncmp("</td", p, 4)
 			|| !strncmp("</ul", p, 4)
-			|| !strncmp("</pre", p, 5))
+			|| !strncmp("</pre", p, 5)
+			|| !strncmp("</math", p, 6))
 			{
 				poff = (off_t)(p - buf->buf_head);
 				buf_shift(buf, (off_t)(p - buf->buf_head), (size_t)1);
