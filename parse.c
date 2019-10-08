@@ -1322,7 +1322,7 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 	char *final;
 	int depth = 0;
 
-	search_from = savep = whence;
+	search_from = savep = (whence + 1);
 	final = memchr(search_from, c, (limit - search_from));
 
 	if (!final)
@@ -1335,18 +1335,22 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 		while (1)
 		{
 			cur_pos = memchr(savep, o, (final - savep));
+
 			if (!cur_pos)
 				break;
 
 			++depth;
 			savep = cur_pos + 1;
+
+			if (savep >= final)
+				break;
 		}
 
 		if (!depth)
 			break;
 
 		if (final >= limit)
-			goto end;
+			break;
 		else
 			search_from = savep = (final + 1);
 
@@ -1364,7 +1368,6 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 		final = savep;
 	}
 
-	end:
 	assert(final);
 	return final;
 }
@@ -1506,9 +1509,7 @@ __parse_maths_expressions(buf_t *buf)
 		if (!exp_start || exp_start >= tail)
 			break;
 
-		savep = exp_start;
-
-		exp_end = __nested_closing_char(exp_start+1, buf->buf_tail, '{', '}');
+		exp_end = __nested_closing_char(exp_start, buf->buf_tail, '{', '}');
 
 		if (!exp_end || exp_end >= tail)
 			break;
@@ -1543,8 +1544,6 @@ __parse_maths_expressions(buf_t *buf)
 	}
 
 	buf_destroy(&tmp);
-	buf_replace(buf, "{", "");
-	buf_replace(buf, "}", "");
 	return 0;
 }
 
