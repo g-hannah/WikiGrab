@@ -1345,14 +1345,18 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 		if (!depth)
 			break;
 
-		search_from = final + 1;
-		savep = search_from;
+		if (final >= limit)
+			goto end;
+		else
+			search_from = savep = (final + 1);
 
 		while (depth)
 		{
 			cur_pos = memchr(savep, c, (limit - savep));
+
 			if (!cur_pos)
 				break;
+
 			--depth;
 			savep = cur_pos + 1;
 		}
@@ -1360,6 +1364,7 @@ __nested_closing_char(char *whence, char *limit, char o, char c)
 		final = savep;
 	}
 
+	end:
 	assert(final);
 	return final;
 }
