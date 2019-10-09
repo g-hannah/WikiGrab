@@ -1309,6 +1309,44 @@ __remove_excess_nl(buf_t *buf)
 	return;
 }
 
+static void
+__remove_excess_sp(buf_t *buf)
+{
+	assert(buf);
+
+	char p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		p = memchr(savep, ' ', (tail - savep));
+
+		if (!p || p >= tail)
+			break;
+
+		++p;
+
+		savep = p;
+		while (*p == ' ')
+			++p;
+
+		range = (p - savep);
+
+		if (range)
+		{
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			p = savep;
+			tail = buf->buf_tail;
+		}
+	}
+
+	return;
+}
+
 /**
  * __nested_closing_char - return a pointer to the final closing character
  * for example, the correct '}' char to go with its opening '{'
@@ -1765,6 +1803,7 @@ extract_wiki_article(buf_t *buf)
 	//__remove_garbage(&content_buf);
 	//__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
+	__remove_excess_sp(&content_buf);
 
 	/*
  	 * List marks for .txt format will be dealt with
