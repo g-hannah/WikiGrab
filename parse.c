@@ -1331,7 +1331,7 @@ __remove_excess_sp(buf_t *buf)
 		++p;
 
 		savep = p;
-		while (*p == ' ')
+		while (isspace(*p))
 			++p;
 
 		range = (p - savep);
@@ -1495,6 +1495,12 @@ __get_outermost_closing(char *whence, char *opattern, char *cpattern)
 #endif
 
 static void
+tex_replace_fractions(buf_t *buf)
+{
+	assert(buf);
+}
+
+static void
 __replace_tex(buf_t *buf)
 {
 	assert(buf);
@@ -1530,6 +1536,10 @@ __replace_tex(buf_t *buf)
 	buf_replace(buf, "\\Rightarrow", "→");
 	buf_replace(buf, "\\quad", " ");
 	buf_replace(buf, "&=", "=");
+
+	tex_replace_fractions(buf);
+
+	return;
 }
 
 int
@@ -1564,6 +1574,7 @@ __parse_maths_expressions(buf_t *buf)
 		elen = (exp_end - exp_start);
 
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
+		*(tmp.buf_tail) = 0;
 
 		__replace_tex(&tmp);
 
