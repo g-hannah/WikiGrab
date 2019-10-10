@@ -1606,6 +1606,7 @@ __replace_tex(buf_t *buf)
 	buf_replace(buf, "\\in", " \xe2\x88\x88");
 	buf_replace(buf, "\\backslash", " \\ ");
 	buf_replace(buf, "\\colon", ":");
+	buf_replace(buf, "\\bar", " ̅");
 	buf_replace(buf, "\\varphi", "ϕ");
 	buf_replace(buf, "\\Rightarrow", "→");
 	buf_replace(buf, "\\quad", " ");
