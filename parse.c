@@ -1568,8 +1568,10 @@ tex_replace_fractions(buf_t *buf)
 		strncpy(frac_start, tmp.buf_head, tmp.data_len);
 
 		buf_clear(&tmp);
-		frac_end = frac_start;
 	}
+
+	buf_destroy(&tmp);
+	return;
 }
 
 static void
