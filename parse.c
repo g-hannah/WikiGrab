@@ -1498,6 +1498,78 @@ static void
 tex_replace_fractions(buf_t *buf)
 {
 	assert(buf);
+	char *frac_start;
+	char *frac_end;
+	char numer[64];
+	char denom[64];
+	char *p;
+	char *q;
+	off_t off;
+	buf_t tmp;
+	size_t range;
+
+	buf_init(&tmp, 128);
+
+	frac_end = frac_start = buf->buf_head;
+
+	while (1)
+	{
+		frac_start = strstr(frac_end, "{\frac");
+
+		if (!frac_start || frac_start >= buf->buf_tail)
+			break;
+
+		frac_end = __nested_closing_char(frac_start, buf->buf_tail, '{', '}');
+
+		if (!frac_end)
+			break;
+
+		p = memchr(frac_start + 1, '{', (frac_end - frac_start));
+		if (!p)
+			break;
+
+		q = memchr(p, '}', (frac_end - p));
+
+		if (!q)
+			break;
+
+		++p;
+
+		strncpy(numer, p, (q - p));
+		numer[q - p] = 0;
+
+		p = ++q;
+
+		if (*p != '{')
+			p = memchr(q, '{', (frac_end - q));
+
+		if (!p)
+			break;
+
+		q = memchr(p, '}', (frac_end - p));
+
+		if (!q)
+			break;
+
+		++p;
+
+		strncpy(denom, p, (q - p));
+		denom[q - p] = 0;
+
+		range = (frac_end - frac_start);
+		buf_collapse(buf, (off_t)(frac_start - buf->buf_head), range);
+		off = (off_t)(frac_start - buf->buf_head);
+		buf_shift(buf, off, strlen(numer) + 2 + strlen(denom));
+		frac_start = buf->buf_head + off;
+		buf_append(&tmp, numer);
+		buf_append(&tmp, "/");
+		buf_append(&tmp, denom);
+		buf_append(&tmp, " ");
+		strncpy(frac_start, tmp.buf_head, tmp.data_len);
+
+		buf_clear(&tmp);
+		frac_end = frac_start;
+	}
 }
 
 static void
