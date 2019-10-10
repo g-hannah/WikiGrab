@@ -1514,7 +1514,7 @@ tex_replace_fractions(buf_t *buf)
 
 	while (1)
 	{
-		frac_start = strstr(frac_end, "{\frac");
+		frac_start = strstr(frac_end, "{\\frac");
 
 		if (!frac_start || frac_start >= buf->buf_tail)
 			break;
