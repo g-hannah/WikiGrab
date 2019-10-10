@@ -1314,7 +1314,7 @@ __remove_excess_sp(buf_t *buf)
 {
 	assert(buf);
 
-	char p;
+	char *p;
 	char *savep;
 	char *tail = buf->buf_tail;
 	size_t range;
