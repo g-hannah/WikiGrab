@@ -80,7 +80,7 @@ do {\
 	int __nr_active = (c)->nr_active_ptrs;\
 	int __i;\
 	struct active_ptr_ctx *__ap_ctx;\
-	assert(__nr_active <= (c)->capacity);\
+	assert(__nr_active < (c)->capacity);\
 	__ap_ctx = &((c)->active_ptrs[0]);\
 	for (__i = 0; __i < __nr_active; ++__i)\
 	{\
@@ -375,6 +375,10 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		if (!(cachep->cache = realloc(cachep->cache, new_capacity)))
 			goto fail_release_mem;
 
+		cachep->capacity = new_capacity;
+		cachep->nr_free += (new_capacity - old_capacity);
+		cachep->cache_size = (new_capacity * cachep->objsize);
+
 		if (old_cache != cachep->cache)
 		{
 			if (in_cache)
@@ -388,6 +392,8 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		if (!(cachep->free_bitmap = realloc(cachep->free_bitmap, new_bitmap_size)))
 			goto fail_release_mem;
 
+		cachep->bitmap_size = new_bitmap_size;
+
 		byteptr = cachep->free_bitmap;
 		for (i = old_bitmap_size; i < new_bitmap_size; ++i)
 			byteptr[i] = 0;
@@ -397,11 +403,6 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 			for (i = old_capacity; i < new_capacity; ++i)
 				cachep->ctor(__wiki_cache_object(cachep, i));
 		}
-
-		cachep->capacity = new_capacity;
-		cachep->nr_free += (new_capacity - old_capacity);
-		cachep->cache_size = (new_capacity * cachep->objsize);
-		cachep->bitmap_size = new_bitmap_size;
 
 		idx = __wiki_cache_next_free_idx(cachep);
 		assert(idx >= 0);
