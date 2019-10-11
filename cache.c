@@ -80,7 +80,7 @@ do {\
 	int __nr_active = (c)->nr_active_ptrs;\
 	int __i;\
 	struct active_ptr_ctx *__ap_ctx;\
-	assert(__nr_active < (c)->capacity);\
+	assert(__nr_active <= (c)->capacity);\
 	__ap_ctx = &((c)->active_ptrs[0]);\
 	for (__i = 0; __i < __nr_active; ++__i)\
 	{\
