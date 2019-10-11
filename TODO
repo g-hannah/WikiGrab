@@ -1,3 +1,5 @@
-Fix bug that is resulting in the article being heavily truncated.
+Reliably determine unwanted javascript encodings etc to remove completely.
 
-Rewrite __nested_closing_char() as current implementation very buggy
+Augment (La)TeX encodings for conversion.
+
+Go through cache allocation implementation with fine tooth comb to find intermittent bug causing complete memory corruption
