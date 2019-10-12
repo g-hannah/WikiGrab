@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <string.h>
+#include "buffer.h"
 #include "utils.h"
 
 /**
@@ -72,4 +73,42 @@ nested_closing_char(char *whence, char *limit, char o, char c)
 
 	assert(final);
 	return final;
+}
+
+void
+remove_excess_sp(buf_t *buf)
+{
+	assert(buf);
+
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		p = memchr(savep, ' ', (tail - savep));
+
+		if (!p || p >= tail)
+			break;
+
+		++p;
+
+		savep = p;
+		while (isspace(*p))
+			++p;
+
+		range = (p - savep);
+
+		if (range)
+		{
+			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
+			p = savep;
+			tail = buf->buf_tail;
+		}
+	}
+
+	return;
 }
