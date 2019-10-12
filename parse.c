@@ -1575,13 +1575,54 @@ tex_replace_fractions(buf_t *buf)
 }
 
 static void
-__replace_tex(buf_t *buf)
+remove_all(buf_t *buf, const char *expression, const char *closing)
 {
 	assert(buf);
+
+	size_t closing_len = strlen(closing);
+	char closing_char;
+	char *p;
+	char *savep;
+	char *end;
+	char *tail = buf->buf_tail;
+	size_t range;
+
+	closing_char = *(closing + (closing_len - 1));
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		p = strstr(savep, expression);
+
+		if (!p || p >= tail)
+			break;
+
+		end = __nested_closing_char(p, tail, *p, closing_char);
+
+		if (!end)
+			break;
+
+		range = (end - p);
+		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
+		tail = buf->buf_tail;
+
+		savep = p;
+	}
+
+	return;
+}
+
+static void
+replace_tex(buf_t *buf)
+{
+	assert(buf);
+
+	remove_all(buf, "{\\textstyle", "}");
 
 	buf_replace(buf, "\\displaystyle", "");
 	buf_replace(buf, "\\forall", "∀");
 	buf_replace(buf, "\\exists", "∃");
+	buf_replace(buf, "\\mapsto", "⟼");
 	buf_replace(buf, "\\leq", "<=");
 	buf_replace(buf, "\\geq", ">=");
 	buf_replace(buf, "\\epsilon", "ε");
@@ -1617,8 +1658,8 @@ __replace_tex(buf_t *buf)
 	return;
 }
 
-int
-__parse_maths_expressions(buf_t *buf)
+static int
+parse_maths_expressions(buf_t *buf)
 {
 	assert(buf);
 
@@ -1651,7 +1692,7 @@ __parse_maths_expressions(buf_t *buf)
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 		*(tmp.buf_tail) = 0;
 
-		__replace_tex(&tmp);
+		replace_tex(&tmp);
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
@@ -1869,7 +1910,7 @@ extract_wiki_article(buf_t *buf)
 		++cp;
 	}
 
-	__parse_maths_expressions(&content_buf);
+	parse_maths_expressions(&content_buf);
 
 #if 0
 	/*
