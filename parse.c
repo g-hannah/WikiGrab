@@ -1579,15 +1579,12 @@ remove_all(buf_t *buf, const char *expression, const char *closing)
 {
 	assert(buf);
 
-	size_t closing_len = strlen(closing);
-	char closing_char;
 	char *p;
 	char *savep;
 	char *end;
 	char *tail = buf->buf_tail;
 	size_t range;
 
-	closing_char = *(closing + (closing_len - 1));
 	savep = buf->buf_head;
 
 	while (1)
@@ -1597,12 +1594,15 @@ remove_all(buf_t *buf, const char *expression, const char *closing)
 		if (!p || p >= tail)
 			break;
 
-		end = __nested_closing_char(p, tail, *p, closing_char);
+		end = memchr(p, '}', (tail - p));
 
 		if (!end)
 			break;
 
+		++end;
 		range = (end - p);
+		fprintf(stderr, "%.*s\n", (int)range, p);
+
 		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
 		tail = buf->buf_tail;
 
@@ -1616,8 +1616,6 @@ static void
 replace_tex(buf_t *buf)
 {
 	assert(buf);
-
-	remove_all(buf, "{\\textstyle", "}");
 
 	buf_replace(buf, "\\displaystyle", "");
 	buf_replace(buf, "\\forall", "∀");
@@ -1671,6 +1669,8 @@ parse_maths_expressions(buf_t *buf)
 	size_t elen;
 	size_t tlen;
 	off_t sp_off;
+
+	remove_all(buf, "{\\textstyle", "}");
 
 	savep = buf->buf_head;
 	buf_init(&tmp, 1024);
