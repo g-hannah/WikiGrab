@@ -5,6 +5,7 @@
 #include "buffer.h"
 #include "cache.h"
 #include "html.h"
+#include "types.h"
 #include "utils.h"
 #include "wikigrab.h"
 
