@@ -1,5 +1,1 @@
-Reliably determine unwanted javascript encodings etc to remove completely.
-
-Augment (La)TeX encodings for conversion.
-
 Go through cache allocation implementation with fine tooth comb to find intermittent bug causing complete memory corruption
