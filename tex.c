@@ -111,6 +111,7 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\phi", "Φ");
 	buf_replace(buf, "\\varphi", "φ");
 	buf_replace(buf, "\\theta", "θ");
+	buf_replace(buf, "\\cong", "≅");
 	buf_replace(buf, "\\cos", "cos");
 	buf_replace(buf, "\\sin", "sin");
 	buf_replace(buf, "\\tan", "tan");
@@ -118,13 +119,19 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\sec", "sec");
 	buf_replace(buf, "\\csc", "csc");
 	buf_replace(buf, "\\infty", "∞");
-	buf_replace(buf, "\\in", " \xe2\x88\x88");
+	buf_replace(buf, "\\in", " ∈");
+	buf_replace(buf, "\\notin", "∉");
 	buf_replace(buf, "\\backslash", " \\ ");
 	buf_replace(buf, "\\colon", ":");
 	buf_replace(buf, "\\bar", " ̅");
 	buf_replace(buf, "\\varphi", "ϕ");
 	buf_replace(buf, "\\Rightarrow", "→");
 	buf_replace(buf, "\\quad", " ");
+	buf_replace(buf, "\\cdots", ". . .");
+	buf_replace(buf, "\\vdots", "⋮");
+	buf_replace(buf, "{\\begin{pmatrix}", "");
+	buf_replace(buf, "\\end{pmatrix}", "");
+	buf_replace(buf, "\\\\", "\n");
 	buf_replace(buf, "&=", "=");
 
 	tex_replace_fractions(buf);
