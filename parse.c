@@ -1598,16 +1598,21 @@ remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
 	buf_append_ex(&otag_part, p, (savep - p));
 	*(otag_part.buf_tail) = 0;
 
+while (1)
+{
+	savep = buf->buf_head;
 	begin = strstr(savep, open_tag);
 	if (!begin || begin >= tail)
-		goto out_destroy_buf;
+		break;
+		//goto out_destroy_buf;
 
 	search_from = (begin + 1);
 
 	final = strstr(search_from, close_tag);
 
 	if (!final || final >= tail)
-		goto out_destroy_buf;
+		break;
+		//goto out_destroy_buf;
 
 	while (1)
 	{
@@ -1618,7 +1623,7 @@ remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
 		{
 			p = strstr(savep, otag_part.buf_head);
 
-			if (!p || p >= tail)
+			if (!p || p >= final)
 				break;
 
 			++depth;
@@ -1637,6 +1642,7 @@ remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
 				break;
 
 			--depth;
+			final = p;
 			savep = ++p;
 		}
 	}
@@ -1647,9 +1653,9 @@ remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
 	else
 		final = ++p;
 
-	fprintf(stderr, "%.*s\n", (int)(final - begin), begin);
+	buf_collapse(buf, (off_t)(begin - buf->buf_head), (final - begin));
+}
 
-	out_destroy_buf:
 	buf_destroy(&otag_part);
 	return;
 }
@@ -1751,9 +1757,6 @@ parse_maths_expressions(buf_t *buf)
 	size_t elen;
 	size_t tlen;
 	off_t sp_off;
-
-	//remove_all(buf, "{\\textstyle", "}");
-	remove_html_content(buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 	savep = buf->buf_head;
 	buf_init(&tmp, 1024);
@@ -1964,6 +1967,8 @@ extract_wiki_article(buf_t *buf)
 
 	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
+
+	remove_html_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 	__get_all(content_cache, &content_buf, "<p", "</p");
 	__get_all(content_cache, &content_buf, "<li", "</li");
