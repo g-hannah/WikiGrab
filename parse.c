@@ -813,165 +813,6 @@ __do_format_txt(buf_t *buf)
 	return 0;
 }
 
-static char tag_content[8192];
-
-static char *
-__get_tag_content(buf_t *buf, const char *tag)
-{
-	assert(buf);
-	assert(tag);
-
-	char *tail = buf->buf_tail;
-	char *p;
-	char *savep;
-
-	p = strstr(buf->buf_head, tag);
-
-	if (!p)
-		return NULL;
-
-	savep = p;
-
-	p = memchr(savep, 0x3e, (tail - savep));
-
-	if (!p)
-		return NULL;
-
-	savep = ++p;
-
-	p = memchr(savep, 0x3c, (tail - savep));
-
-	if (!p)
-		return NULL;
-
-	strncpy(tag_content, savep, (p - savep));
-	tag_content[p - savep] = 0;
-
-	return tag_content;
-}
-
-static char *
-__get_tag_field(buf_t *buf, const char *tag, const char *field)
-{
-	assert(buf);
-	assert(tag);
-	assert(field);
-
-	char *tail = buf->buf_tail;
-	char *p;
-	char *savep;
-
-	p = strstr(buf->buf_head, tag);
-
-	if (!p)
-		return NULL;
-
-	savep = p;
-
-	p = strstr(savep, field);
-
-	if (!p)
-		return NULL;
-
-	savep = p;
-
-	/* e.g. "content=\"..."
-	 *       s         p
-	 */
-	p += (strlen(field) + 2);
-
-	savep = p;
-
-	p = memchr(savep, 0x22, (tail - savep));
-
-	if (!p)
-		return NULL;
-
-	strncpy(tag_content, savep, (p - savep));
-	tag_content[p - savep] = 0;
-
-	return tag_content;
-}
-
-static content_t *content = NULL;
-
-static int
-__get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char *close_pattern)
-{
-	assert(cachep);
-	assert(buf);
-	assert(open_pattern);
-	assert(close_pattern);
-
-	char *savep = buf->buf_head;
-	char *tail = buf->buf_tail;
-	char *start;
-	char *end;
-	size_t len;
-
-	while(1)
-	{
-		start = strstr(savep, open_pattern);
-
-		if (!start || start >= tail)
-			break;
-
-		savep = start;
-		end = strstr(savep, close_pattern);
-
-		if (!end || end >= tail)
-			break;
-
-		savep = end;
-		end = memchr(savep, 0x3e, (tail - savep));
-
-		if (!end)
-			break;
-
-		++end;
-		content = wiki_cache_alloc(cachep, &content);
-
-		if (!content)
-			goto fail;
-
-		len = (end - start);
-
-		if (len >= content->alloc_len)
-		{
-#ifdef DEBUG
-			printf("reallocating memory @ %p\n", content->data);
-#endif
-			if (!(content->data = realloc(content->data, len+1)))
-				goto fail;
-
-			content->alloc_len = len+1;
-#ifdef DEBUG
-			printf("memory is now at @ %p\n", content->data);
-#endif
-		}
-
-		assert((end - start) < content->alloc_len);
-		strncpy(content->data, start, len);
-		content->data_len = len;
-		content->off = (off_t)(start - buf->buf_head);
-		buf_collapse(buf, (off_t)(start - buf->buf_head), (end - start));
-		end = start;
-		tail = buf->buf_tail;
-
-		savep = end;
-
-		if (savep >= tail)
-			break;
-
-		content = NULL;
-	}
-
-	return 0;
-
-	fail:
-	return -1;
-}
-
 static int
 __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const close_pattern)
 {
@@ -1311,245 +1152,6 @@ __remove_excess_nl(buf_t *buf)
 	return;
 }
 
-static void
-__remove_excess_sp(buf_t *buf)
-{
-	assert(buf);
-
-	char *p;
-	char *savep;
-	char *tail = buf->buf_tail;
-	size_t range;
-
-	savep = buf->buf_head;
-
-	while (1)
-	{
-		p = memchr(savep, ' ', (tail - savep));
-
-		if (!p || p >= tail)
-			break;
-
-		++p;
-
-		savep = p;
-		while (isspace(*p))
-			++p;
-
-		range = (p - savep);
-
-		if (range)
-		{
-			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
-			p = savep;
-			tail = buf->buf_tail;
-		}
-	}
-
-	return;
-}
-
-#if 0
-/**
- * __get_outermost_closing - return a pointer to one byte past the closing pattern
- * @whence: position from which to start search
- * @opattern: the corresponding open pattern for the enclosing sequence
- * @cpattern: the closing pattern of which the outermost one is sought
- */
-char *
-__get_outermost_closing(char *whence, char *opattern, char *cpattern)
-{
-	char *p = whence;
-	char *savep;
-	char *search_from;
-	char *close;
-	int depth = 0;
-	size_t oplen = strlen(opattern);
-	size_t cplen = strlen(cpattern);
-
-	search_from = p;
-	savep = p;
-	close = strstr(search_from, cpattern);
-
-	if (!close)
-		return NULL;
-
-	close += cplen;
-
-	while (1)
-	{
-		savep = search_from;
-
-		while (1)
-		{
-			p = strstr(savep, opattern);
-			if (p)
-			{
-				++depth;
-				savep = (p + oplen);
-			}
-			else
-			{
-				break;
-			}
-		}
-
-		if (!depth)
-			break;
-
-		search_from = savep = close;
-
-		while (depth)
-		{
-			p = strstr(savep, cpattern);
-			if (!p)
-			{
-				if (depth)
-				{
-					fprintf(stderr, "__get_outermost_closing: failed to find required closing pattern\n");
-					return NULL;
-				}
-
-				break;
-			}
-
-			savep = (p + cplen);
-			--depth;
-		}
-
-		close = savep;
-	}
-
-	return close;
-}
-#endif
-
-static void
-remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
-{
-	assert(buf);
-	assert(open_tag);
-	assert(close_tag);
-
-	char *p;
-	char *savep;
-	char *tail = buf->buf_tail;
-	char *search_from;
-	char *begin;
-	char *final;
-	buf_t otag_part;
-	int depth = 0;
-
-	savep = buf->buf_head;
-	buf_init(&otag_part, 64);
-
-	p = open_tag;
-	savep = memchr(p, ' ', strlen(open_tag));
-	buf_append_ex(&otag_part, p, (savep - p));
-	*(otag_part.buf_tail) = 0;
-
-while (1)
-{
-	savep = buf->buf_head;
-	begin = strstr(savep, open_tag);
-	if (!begin || begin >= tail)
-		break;
-		//goto out_destroy_buf;
-
-	search_from = (begin + 1);
-
-	final = strstr(search_from, close_tag);
-
-	if (!final || final >= tail)
-		break;
-		//goto out_destroy_buf;
-
-	while (1)
-	{
-		savep = search_from;
-		depth = 0;
-
-		while (1)
-		{
-			p = strstr(savep, otag_part.buf_head);
-
-			if (!p || p >= final)
-				break;
-
-			++depth;
-			savep = ++p;
-		}
-
-		if (!depth)
-			break;
-
-		savep = search_from = (final + 1);
-		while (depth)
-		{
-			p = strstr(savep, close_tag);
-
-			if (!p || p >= tail)
-				break;
-
-			--depth;
-			final = p;
-			savep = ++p;
-		}
-	}
-
-	p = memchr(final, '>', (tail - final));
-	if (!p)
-		final += strlen(close_tag);
-	else
-		final = ++p;
-
-	buf_collapse(buf, (off_t)(begin - buf->buf_head), (final - begin));
-}
-
-	buf_destroy(&otag_part);
-	return;
-}
-
-#if 0
-static void
-remove_all(buf_t *buf, const char *expression, const char *closing)
-{
-	assert(buf);
-
-	char *p;
-	char *savep;
-	char *end;
-	char *tail = buf->buf_tail;
-	size_t range;
-
-	savep = buf->buf_head;
-
-	while (1)
-	{
-		p = strstr(savep, expression);
-
-		if (!p || p >= tail)
-			break;
-
-		end = memchr(p, '}', (tail - p));
-
-		if (!end)
-			break;
-
-		++end;
-		range = (end - p);
-		fprintf(stderr, "%.*s\n", (int)range, p);
-
-		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
-		tail = buf->buf_tail;
-
-		savep = p;
-	}
-
-	return;
-}
-#endif
-
 static int
 parse_maths_expressions(buf_t *buf)
 {
@@ -1636,6 +1238,7 @@ extract_wiki_article(buf_t *buf)
 	wiki_cache_t *content_cache = NULL;
 	struct article_header article_header;
 	size_t vlen;
+	char *tag_content_ptr;
 
 	if (!(buffer = calloc(DEFAULT_TMP_BUF_SIZE, 1)))
 		goto fail;
@@ -1699,26 +1302,23 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&file_title, WIKIGRAB_DIR);
 	buf_append(&file_title, "/");
 
-	__get_tag_content(buf, "<title");
+	tag_content_ptr = html_get_tag_content(buf, "<title");
 
-	buf_append(&content_buf, tag_content);
+	buf_append(&content_buf, tag_content_ptr);
 	__normalise_file_title(&content_buf);
 
 	buf_append(&file_title, content_buf.buf_head);
 	buf_clear(&content_buf);
 
-	vlen = strlen(tag_content);
-	strncpy(article_header.title->value, tag_content, vlen);
+	vlen = strlen(tag_content_ptr);
+	strncpy(article_header.title->value, tag_content_ptr, vlen);
 	article_header.title->value[vlen] = 0;
 	article_header.title->vlen = vlen;
 
-	/*
-	 * Replace spaces (and any non-underscore non-ascii chars) with underscores.
-	 */
-	__get_tag_field(buf, "<meta name=\"generator\"", "content");
+	tag_content_ptr = html_get_tag_field(buf, "<meta name=\"generator\"", "content");
 
 	vlen = strlen(tag_content);
-	strncpy(article_header.generator->value, tag_content, vlen);
+	strncpy(article_header.generator->value, tag_content_ptr, vlen);
 	article_header.generator->value[vlen] = 0;
 	article_header.generator->vlen = vlen;
 
@@ -1779,12 +1379,11 @@ extract_wiki_article(buf_t *buf)
 	remove_html_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 /* Stuff we want */
-	__get_all(content_cache, &content_buf, "<p", "</p");
-	__get_all(content_cache, &content_buf, "<i", "</i");
-	__get_all(content_cache, &content_buf, "<ul", "</ul");
-	__get_all(content_cache, &content_buf, "<li", "</li");
-	__get_all(content_cache, &content_buf, "<math", "</math");
-	__get_all(content_cache, &content_buf, "<table", "</table");
+	html_get_all(content_cache, &content_buf, "<p", "</p");
+	html_get_all(content_cache, &content_buf, "<i", "</i");
+	html_get_all(content_cache, &content_buf, "<li", "</li");
+	html_get_all(content_cache, &content_buf, "<math", "</math");
+	html_get_all(content_cache, &content_buf, "<table", "</table");
 
 	buf_clear(&content_buf);
 
