@@ -1378,13 +1378,18 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 /* Stuff we do not want */
-	html_remove_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
+	html_remove_elements_class(&content_buf, "mw-references-wrap");
+	html_remove_elements_class(&content_buf, "toc");
+	html_remove_elements_class(&content_buf, "mw-editsection");
+	html_remove_elements_class(&content_buf, "citation");
+	//html_remove_elements_attribute(&content_buf, "displaystyle", "false");
+	html_remove_content(&content_buf, "<style", "</style");
 
 /* Stuff we want */
 	html_get_all(content_cache, &content_buf, "<p", "</p");
-	html_get_all(content_cache, &content_buf, "<i", "</i");
+	//html_get_all(content_cache, &content_buf, "<i", "</i");
 	html_get_all(content_cache, &content_buf, "<li", "</li");
-	html_get_all(content_cache, &content_buf, "<math", "</math");
+	html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation");
 	html_get_all(content_cache, &content_buf, "<table", "</table");
 
 	buf_clear(&content_buf);
