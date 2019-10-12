@@ -12,6 +12,8 @@
 #include "buffer.h"
 #include "http.h"
 #include "parse.h"
+#include "tex.h"
+#include "utils.h"
 #include "wikigrab.h"
 
 #define CONTENT_DATA_SIZE		16384UL
@@ -1347,78 +1349,6 @@ __remove_excess_sp(buf_t *buf)
 	return;
 }
 
-/**
- * __nested_closing_char - return a pointer to the final closing character
- * for example, the correct '}' char to go with its opening '{'
- * @whence: pointer to the opening char
- * @limit: pointer to our search limit
- * @o: the opening character
- * @c: the closing character
- */
-char *
-__nested_closing_char(char *whence, char *limit, char o, char c)
-{
-	assert(whence);
-	assert(limit);
-	assert(limit > whence);
-
-	char *search_from;
-	char *cur_pos;
-	char *savep;
-	char *final;
-	int depth = 0;
-
-	search_from = savep = (whence + 1);
-	final = memchr(search_from, c, (limit - search_from));
-
-	if (!final)
-		return NULL;
-
-	while (1)
-	{
-		savep = search_from;
-
-		while (1)
-		{
-			cur_pos = memchr(savep, o, (final - savep));
-
-			if (!cur_pos)
-				break;
-
-			++depth;
-
-			if (cur_pos >= final)
-				savep = cur_pos;
-			else
-				savep = (cur_pos + 1);
-		}
-
-		if (!depth)
-			break;
-
-		search_from = savep = (final + 1);
-
-		while (depth)
-		{
-			assert(limit >= savep);
-			cur_pos = memchr(savep, c, (limit - savep));
-
-			if (!cur_pos)
-				break;
-
-			--depth;
-
-			final = cur_pos;
-			savep = (final + 1);
-		}
-
-		depth = 0;
-	}
-
-	assert(final);
-	return final;
-}
-
 #if 0
 /**
  * __get_outermost_closing - return a pointer to one byte past the closing pattern
@@ -1493,86 +1423,6 @@ __get_outermost_closing(char *whence, char *opattern, char *cpattern)
 	return close;
 }
 #endif
-
-static void
-tex_replace_fractions(buf_t *buf)
-{
-	assert(buf);
-	char *frac_start;
-	char *frac_end;
-	char numer[64];
-	char denom[64];
-	char *p;
-	char *q;
-	off_t off;
-	buf_t tmp;
-	size_t range;
-
-	buf_init(&tmp, 128);
-
-	frac_end = frac_start = buf->buf_head;
-
-	while (1)
-	{
-		frac_start = strstr(frac_end, "{\\frac");
-
-		if (!frac_start || frac_start >= buf->buf_tail)
-			break;
-
-		frac_end = __nested_closing_char(frac_start, buf->buf_tail, '{', '}');
-
-		if (!frac_end)
-			break;
-
-		p = memchr(frac_start + 1, '{', (frac_end - frac_start));
-		if (!p)
-			break;
-
-		q = memchr(p, '}', (frac_end - p));
-
-		if (!q)
-			break;
-
-		++p;
-
-		strncpy(numer, p, (q - p));
-		numer[q - p] = 0;
-
-		p = ++q;
-
-		if (*p != '{')
-			p = memchr(q, '{', (frac_end - q));
-
-		if (!p)
-			break;
-
-		q = memchr(p, '}', (frac_end - p));
-
-		if (!q)
-			break;
-
-		++p;
-
-		strncpy(denom, p, (q - p));
-		denom[q - p] = 0;
-
-		range = (frac_end - frac_start);
-		buf_collapse(buf, (off_t)(frac_start - buf->buf_head), range);
-		off = (off_t)(frac_start - buf->buf_head);
-		buf_shift(buf, off, strlen(numer) + 2 + strlen(denom));
-		frac_start = buf->buf_head + off;
-		buf_append(&tmp, numer);
-		buf_append(&tmp, "/");
-		buf_append(&tmp, denom);
-		buf_append(&tmp, " ");
-		strncpy(frac_start, tmp.buf_head, tmp.data_len);
-
-		buf_clear(&tmp);
-	}
-
-	buf_destroy(&tmp);
-	return;
-}
 
 static void
 remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
@@ -1700,50 +1550,6 @@ remove_all(buf_t *buf, const char *expression, const char *closing)
 }
 #endif
 
-static void
-replace_tex(buf_t *buf)
-{
-	assert(buf);
-
-	buf_replace(buf, "\\displaystyle", "");
-	buf_replace(buf, "\\forall", "∀");
-	buf_replace(buf, "\\exists", "∃");
-	buf_replace(buf, "\\mapsto", "⟼");
-	buf_replace(buf, "\\leq", "<=");
-	buf_replace(buf, "\\geq", ">=");
-	buf_replace(buf, "\\epsilon", "ε");
-	buf_replace(buf, "\\alpha", "α");
-	buf_replace(buf, "\\Alpha", "Α");
-	buf_replace(buf, "\\beta", "β");
-	buf_replace(buf, "\\Beta", "Β");
-	buf_replace(buf, "\\gamma", "γ");
-	buf_replace(buf, "\\Gamma", "Γ");
-	buf_replace(buf, "\\pi", "π");
-	buf_replace(buf, "\\Pi", "Π");
-	buf_replace(buf, "\\phi", "Φ");
-	buf_replace(buf, "\\varphi", "φ");
-	buf_replace(buf, "\\theta", "θ");
-	buf_replace(buf, "\\cos", "cos");
-	buf_replace(buf, "\\sin", "sin");
-	buf_replace(buf, "\\tan", "tan");
-	buf_replace(buf, "\\cot", "cot");
-	buf_replace(buf, "\\sec", "sec");
-	buf_replace(buf, "\\csc", "csc");
-	buf_replace(buf, "\\infty", "∞");
-	buf_replace(buf, "\\in", " \xe2\x88\x88");
-	buf_replace(buf, "\\backslash", " \\ ");
-	buf_replace(buf, "\\colon", ":");
-	buf_replace(buf, "\\bar", " ̅");
-	buf_replace(buf, "\\varphi", "ϕ");
-	buf_replace(buf, "\\Rightarrow", "→");
-	buf_replace(buf, "\\quad", " ");
-	buf_replace(buf, "&=", "=");
-
-	tex_replace_fractions(buf);
-
-	return;
-}
-
 static int
 parse_maths_expressions(buf_t *buf)
 {
@@ -1768,7 +1574,7 @@ parse_maths_expressions(buf_t *buf)
 		if (!exp_start || exp_start >= tail)
 			break;
 
-		exp_end = __nested_closing_char(exp_start, buf->buf_tail, '{', '}');
+		exp_end = nested_closing_char(exp_start, buf->buf_tail, '{', '}');
 
 		if (!exp_end)
 			break;
@@ -1778,7 +1584,8 @@ parse_maths_expressions(buf_t *buf)
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 		*(tmp.buf_tail) = 0;
 
-		replace_tex(&tmp);
+		tex_replace_symbols(&tmp);
+		tex_replace_fractions(&tmp);
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
@@ -1972,10 +1779,10 @@ extract_wiki_article(buf_t *buf)
 	remove_html_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 /* Stuff we want */
-	__get_all(content_cache, &content_buf, "<i", "</i");
 	__get_all(content_cache, &content_buf, "<p", "</p");
-	__get_all(content_cache, &content_buf, "<li", "</li");
+	__get_all(content_cache, &content_buf, "<i", "</i");
 	__get_all(content_cache, &content_buf, "<ul", "</ul");
+	__get_all(content_cache, &content_buf, "<li", "</li");
 	__get_all(content_cache, &content_buf, "<math", "</math");
 	__get_all(content_cache, &content_buf, "<table", "</table");
 
