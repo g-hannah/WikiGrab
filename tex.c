@@ -94,6 +94,7 @@ tex_replace_symbols(buf_t *buf)
 	assert(buf);
 
 	buf_replace(buf, "\\displaystyle", "");
+	buf_replace(buf, "\\sum", "Σ");
 	buf_replace(buf, "\\forall", "∀");
 	buf_replace(buf, "\\exists", "∃");
 	buf_replace(buf, "\\mapsto", "⟼");
