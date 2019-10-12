@@ -10,9 +10,11 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "buffer.h"
+#include "html.h"
 #include "http.h"
 #include "parse.h"
 #include "tex.h"
+#include "types.h"
 #include "utils.h"
 #include "wikigrab.h"
 
@@ -1317,7 +1319,7 @@ extract_wiki_article(buf_t *buf)
 
 	tag_content_ptr = html_get_tag_field(buf, "<meta name=\"generator\"", "content");
 
-	vlen = strlen(tag_content);
+	vlen = strlen(tag_content_ptr);
 	strncpy(article_header.generator->value, tag_content_ptr, vlen);
 	article_header.generator->value[vlen] = 0;
 	article_header.generator->vlen = vlen;
@@ -1376,7 +1378,7 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 /* Stuff we do not want */
-	remove_html_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
+	html_remove_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 /* Stuff we want */
 	html_get_all(content_cache, &content_buf, "<p", "</p");
