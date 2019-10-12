@@ -1431,7 +1431,7 @@ extract_wiki_article(buf_t *buf)
 	//__remove_garbage(&content_buf);
 	//__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
-	__remove_excess_sp(&content_buf);
+	remove_excess_sp(&content_buf);
 
 	/*
  	 * List marks for .txt format will be dealt with
