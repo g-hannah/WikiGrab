@@ -253,3 +253,153 @@ while (1)
 	buf_destroy(&otag_part);
 	return;
 }
+
+/**
+ * html_remove_elements_class - remove all HTML content with particular class
+ * @buf: the buffer holding the HTML data
+ * @class: the classname to search for
+ */
+void
+html_remove_elements_class(buf_t *buf, const char *classname)
+{
+	assert(buf);
+	assert(classname);
+
+	char *p;
+	char *e;
+	char *savep;
+	char *tail;
+	char *left_angle;
+	char *content_end;
+	int got_tag = 0;
+	size_t range;
+	buf_t close_tag;
+
+	savep = buf->buf_head;
+	tail = buf->buf_tail;
+
+	buf_init(&close_tag, 64);
+
+	while (1)
+	{
+		p = strstr(savep, classname);
+
+		if (!p || p >= tail)
+			break;
+
+		if (strncmp("class=", p - strlen("class=\""), 6))
+		{
+			savep = ++p;
+			continue;
+		}
+
+		left_angle = p;
+		while (*left_angle != '<' && left_angle > (buf->buf_head + 1));
+			--left_angle;
+
+		if (!got_tag)
+		{
+			e = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!e)
+				break;
+
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, (left_angle + 1), ((e - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
+
+			got_tag = 1;
+		}
+
+		content_end = strstr(p, close_tag.buf_head);
+		if (!content_end || content_end >= tail)
+			break;
+
+		content_end = memchr(content_end, '>', (tail - content_end));
+		++content_end;
+
+		range = (content_end - left_angle);
+		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
+		tail = buf->buf_tail;
+		savep = left_angle;
+	}
+
+	buf_destroy(&close_tag);
+
+	return;
+}
+
+/**
+ * html_remove_elements_id - remove HTML content with particular id
+ * @buf: the buffer with the HTML data
+ * @id: the id to search for
+ */
+void
+html_remove_elements_id(buf_t *buf, const char *id)
+{
+	assert(buf);
+	assert(id);
+
+	char *p;
+	char *e;
+	char *savep;
+	char *tail;
+	char *left_angle;
+	char *content_end;
+	int got_tag = 0;
+	size_t range;
+	buf_t close_tag;
+
+	savep = buf->buf_head;
+	tail = buf->buf_tail;
+
+	buf_init(&close_tag, 64);
+
+	while (1)
+	{
+		p = strstr(savep, classname);
+
+		if (!p || p >= tail)
+			break;
+
+		if (strncmp("id=", p - strlen("id=\""), 3))
+		{
+			savep = ++p;
+			continue;
+		}
+
+		left_angle = p;
+		while (*left_angle != '<' && left_angle > (buf->buf_head + 1));
+			--left_angle;
+
+		if (!got_tag)
+		{
+			e = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!e)
+				break;
+
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, (left_angle + 1), ((e - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
+
+			got_tag = 1;
+		}
+
+		content_end = strstr(p, close_tag.buf_head);
+		if (!content_end || content_end >= tail)
+			break;
+
+		content_end = memchr(content_end, '>', (tail - content_end));
+		++content_end;
+
+		range = (content_end - left_angle);
+		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
+		tail = buf->buf_tail;
+		savep = left_angle;
+	}
+
+	buf_destroy(&close_tag);
+
+	return;
+}
