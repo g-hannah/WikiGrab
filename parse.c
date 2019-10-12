@@ -1575,6 +1575,87 @@ tex_replace_fractions(buf_t *buf)
 }
 
 static void
+remove_html_content(buf_t *buf, char *open_tag, char *close_tag)
+{
+	assert(buf);
+	assert(open_tag);
+	assert(close_tag);
+
+	char *p;
+	char *savep;
+	char *tail = buf->buf_tail;
+	char *search_from;
+	char *begin;
+	char *final;
+	buf_t otag_part;
+	int depth = 0;
+
+	savep = buf->buf_head;
+	buf_init(&otag_part, 64);
+
+	p = open_tag;
+	savep = memchr(p, ' ', strlen(open_tag));
+	buf_append_ex(&otag_part, p, (savep - p));
+	*(otag_part.buf_tail) = 0;
+
+	begin = strstr(savep, open_tag);
+	if (!begin || begin >= tail)
+		goto out_destroy_buf;
+
+	search_from = (begin + 1);
+
+	final = strstr(search_from, close_tag);
+
+	if (!final || final >= tail)
+		goto out_destroy_buf;
+
+	while (1)
+	{
+		savep = search_from;
+		depth = 0;
+
+		while (1)
+		{
+			p = strstr(savep, otag_part.buf_head);
+
+			if (!p || p >= tail)
+				break;
+
+			++depth;
+			savep = ++p;
+		}
+
+		if (!depth)
+			break;
+
+		savep = search_from = (final + 1);
+		while (depth)
+		{
+			p = strstr(savep, close_tag);
+
+			if (!p || p >= tail)
+				break;
+
+			--depth;
+			savep = ++p;
+		}
+	}
+
+	p = memchr(final, '>', (tail - final));
+	if (!p)
+		final += strlen(close_tag);
+	else
+		final = ++p;
+
+	fprintf(stderr, "%.*s\n", (int)(final - begin), begin);
+
+	out_destroy_buf:
+	buf_destroy(&otag_part);
+	return;
+}
+
+#if 0
+static void
 remove_all(buf_t *buf, const char *expression, const char *closing)
 {
 	assert(buf);
@@ -1611,6 +1692,7 @@ remove_all(buf_t *buf, const char *expression, const char *closing)
 
 	return;
 }
+#endif
 
 static void
 replace_tex(buf_t *buf)
@@ -1670,7 +1752,8 @@ parse_maths_expressions(buf_t *buf)
 	size_t tlen;
 	off_t sp_off;
 
-	remove_all(buf, "{\\textstyle", "}");
+	//remove_all(buf, "{\\textstyle", "}");
+	remove_html_content(buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
 	savep = buf->buf_head;
 	buf_init(&tmp, 1024);
