@@ -1968,10 +1968,14 @@ extract_wiki_article(buf_t *buf)
 	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
 
+/* Stuff we do not want */
 	remove_html_content(&content_buf, "<mstyle displaystyle=\"false\"", "</mstyle");
 
+/* Stuff we want */
+	__get_all(content_cache, &content_buf, "<i", "</i");
 	__get_all(content_cache, &content_buf, "<p", "</p");
 	__get_all(content_cache, &content_buf, "<li", "</li");
+	__get_all(content_cache, &content_buf, "<ul", "</ul");
 	__get_all(content_cache, &content_buf, "<math", "</math");
 	__get_all(content_cache, &content_buf, "<table", "</table");
 
