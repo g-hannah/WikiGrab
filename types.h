@@ -1,6 +1,8 @@
 #ifndef TYPES_H
 #define TYPES_H 1
 
+#include <sys/types.h>
+
 typedef struct value_t value_t;
 typedef struct content_t content_t;
 
