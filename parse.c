@@ -1483,9 +1483,9 @@ extract_wiki_article(buf_t *buf)
 		article_header.content_len->vlen = strlen(article_header.content_len->value);
 		
 		sprintf(buffer,
-			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n"
-			"                    Downloaded via WikiGrab v%s\n\n"
-			"      >>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n"
+			"      __________________________________________________________\n\n"
+			"                    Downloaded via WikiGrab v%s\n"
+			"      __________________________________________________________\n\n"
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n"
@@ -1494,7 +1494,7 @@ extract_wiki_article(buf_t *buf)
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n\n"
-			"      @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
+			"      __________________________________________________________\n\n",
 			WIKIGRAB_BUILD,
 			LEFT_ALIGN_WIDTH, "Title: ", article_header.title->value,
 			LEFT_ALIGN_WIDTH, "Served-by: ", article_header.server_name->value,
