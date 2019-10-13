@@ -430,12 +430,12 @@ __remove_garbage(buf_t *buf)
  */
 #define BUF_SHIFT_SAFE(by, optr)\
 do {\
-	size_t __lstart_off;\
-	size_t __lend_off;\
-	size_t __nloff;\
-	size_t __rightoff;\
-	size_t __poff;\
-	size_t __spoff;\
+	size_t __lstart_off = 0;\
+	size_t __lend_off = 0;\
+	size_t __nloff = 0;\
+	size_t __rightoff = 0;\
+	size_t __poff = 0;\
+	size_t __spoff = 0;\
 	if (line_start)\
 		__lstart_off = (line_start - buf->buf_head);\
 	if (line_end)\
@@ -1279,9 +1279,12 @@ extract_wiki_article(buf_t *buf)
 	date = (http_header_t *)wiki_cache_alloc(http_hcache, &date);
 	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache, &lastmod);
 
-	http_fetch_header(buf, "Server", server, (off_t)0);
-	http_fetch_header(buf, "Date", date, (off_t)0);
-	http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0);
+	if (!http_fetch_header(buf, "Server", server, (off_t)0))
+		goto out_destroy_file;
+	if (!http_fetch_header(buf, "Date", date, (off_t)0))
+		goto out_destroy_file;
+	if (!http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0))
+		goto out_destroy_file;
 
 	strcpy(article_header.server_name->value, server->value);
 	article_header.server_name->vlen = server->vlen;
@@ -1386,11 +1389,14 @@ extract_wiki_article(buf_t *buf)
 	html_remove_content(&content_buf, "<style", "</style");
 
 /* Stuff we want */
-	html_get_all(content_cache, &content_buf, "<p", "</p");
-	//html_get_all(content_cache, &content_buf, "<i", "</i");
-	html_get_all(content_cache, &content_buf, "<li", "</li");
-	html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation");
-	html_get_all(content_cache, &content_buf, "<table", "</table");
+	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
+		goto out_destroy_file;
+	if (html_get_all(content_cache, &content_buf, "<li", "</li") < 0)
+		goto out_destroy_file;
+	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
+		goto out_destroy_file;
+	if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
+		goto out_destroy_file;
 
 	buf_clear(&content_buf);
 
@@ -1545,7 +1551,8 @@ extract_wiki_article(buf_t *buf)
 
 	out_destroy_file:
 
-	ftruncate(out_fd, (off_t)0);
+	if (ftruncate(out_fd, (off_t)0) < 0)
+		;
 	unlink(file_title.buf_head);
 
 	out_destroy_bufs:
