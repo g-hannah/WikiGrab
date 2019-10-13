@@ -27,7 +27,7 @@ $(OBJ_FILES): $(SOURCE_FILES) $(DEP_FILES)
 ifeq ($(DEBUG),1)
 	$(CC) $(CFLAGS) -g -DDEBUG -c $^
 else
-	$(CC) $(CFLAGS) -c $^
+	$(CC) $(CFLAGS) -c -O2 $^
 endif
 
 
