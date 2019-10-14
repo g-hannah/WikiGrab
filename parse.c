@@ -1287,13 +1287,31 @@ extract_wiki_article(buf_t *buf)
 	if (!http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0))
 		goto out_destroy_file;
 
-	strcpy(article_header.server_name->value, server->value);
-	article_header.server_name->vlen = server->vlen;
+	if (server->vlen < MAX_VALUE_LEN)
+		len = server->vlen;
+	else
+		len = MAX_VALUE_LEN;
 
-	strcpy(article_header.downloaded->value, date->value);
-	article_header.downloaded->vlen = date->vlen;
+	strncpy(article_header.server_name->value, server->value, len);
+	article_header.server_name->value[len] = 0;
+	article_header.server_name->vlen = len;
 
-	strcpy(article_header.lastmod->value, lastmod->value);
+	if (data->vlen < MAX_VALUE_LEN)
+		len = data->vlen;
+	else
+		len = MAX_VALUE_LEN;
+
+	strncpy(article_header.downloaded->value, date->value, len);
+	article_header.downloaded->value[len] = 0;
+	article_header.downloaded->vlen = len;
+
+	if (lastmod->vlen < MAX_VALUE_LEN)
+		len = lastmod->vlen;
+	else
+		len = MAX_VALUE_LEN;
+
+	strncpy(article_header.lastmod->value, lastmod->value, len);
+	article_header.lastmod->value[len] = 0;
 	article_header.lastmod->vlen = lastmod->vlen;
 
 	wiki_cache_dealloc(http_hcache, (void *)server, &server);
@@ -1405,10 +1423,16 @@ extract_wiki_article(buf_t *buf)
 /* Stuff we want */
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
 		goto out_destroy_file;
+
+	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
+		goto out_destroy_file;
+
 	if (html_get_all(content_cache, &content_buf, "<li", "</li") < 0)
 		goto out_destroy_file;
+
 	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
 		goto out_destroy_file;
+
 	if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
 		goto out_destroy_file;
 
