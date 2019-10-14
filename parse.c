@@ -1240,6 +1240,7 @@ extract_wiki_article(buf_t *buf)
 	wiki_cache_t *content_cache = NULL;
 	struct article_header article_header;
 	size_t vlen;
+	size_t len;
 	char *tag_content_ptr;
 
 	if (!(buffer = calloc(DEFAULT_TMP_BUF_SIZE, 1)))
@@ -1316,16 +1317,28 @@ extract_wiki_article(buf_t *buf)
 	buf_clear(&content_buf);
 
 	vlen = strlen(tag_content_ptr);
-	strncpy(article_header.title->value, tag_content_ptr, vlen);
-	article_header.title->value[vlen] = 0;
-	article_header.title->vlen = vlen;
+
+	if (vlen < MAX_VALUE_LEN)
+		len = vlen;
+	else
+		len = MAX_VALUE_LEN;
+
+	strncpy(article_header.title->value, tag_content_ptr, len);
+	article_header.title->value[len] = 0;
+	article_header.title->vlen = len;
 
 	tag_content_ptr = html_get_tag_field(buf, "<meta name=\"generator\"", "content");
 
 	vlen = strlen(tag_content_ptr);
-	strncpy(article_header.generator->value, tag_content_ptr, vlen);
-	article_header.generator->value[vlen] = 0;
-	article_header.generator->vlen = vlen;
+
+	if (vlen < MAX_VALUE_LEN)
+		len = vlen;
+	else
+		len = MAX_VALUE_LEN;
+
+	strncpy(article_header.generator->value, tag_content_ptr, len);
+	article_header.generator->value[len] = 0;
+	article_header.generator->vlen = len;
 
 	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
 		goto out_destroy_bufs;
