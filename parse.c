@@ -1394,6 +1394,7 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 /* Stuff we do not want */
+	html_remove_elements_class(&content_buf, "box-Multiple_issues");
 	html_remove_elements_class(&content_buf, "mw-references-wrap");
 	html_remove_elements_class(&content_buf, "toc");
 	html_remove_elements_class(&content_buf, "mw-editsection");
