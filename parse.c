@@ -1555,18 +1555,6 @@ extract_wiki_article(buf_t *buf)
 	close(out_fd);
 	out_fd = -1;
 
-	if (option_set(OPT_OPEN_FINISH))
-	{
-		pid_t child;
-
-		child = fork();
-
-		if (!child)
-		{
-			execlp("gedit", file_title.buf_head, (char *)0);
-		}
-	}
-
 	wiki_cache_dealloc(value_cache, (void *)article_header.title, &article_header.title);
 	wiki_cache_dealloc(value_cache, (void *)article_header.server_name, &article_header.server_name);
 	wiki_cache_dealloc(value_cache, (void *)article_header.server_ipv4, &article_header.server_ipv4);
