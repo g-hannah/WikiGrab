@@ -909,8 +909,12 @@ __normalise_file_title(buf_t *buf)
 		++p;
 	}
 
-	while (!isalpha(*(buf->buf_tail - 1)) && !isdigit(*(buf->buf_tail - 1)))
-		buf_snip(buf, 1);
+	p = (buf->buf_tail - 1);
+	while (!isalpha(*p) && !isdigit(*p))
+		--p;
+
+	if ((buf->buf_tail - p) > 1)
+		buf_snip(buf, (buf->buf_tail - p));
 
 	if (option_set(OPT_FORMAT_XML))
 		buf_append(buf, ".xml");
@@ -1093,6 +1097,11 @@ extract_wiki_article(buf_t *buf)
 	buf_append(&file_title, "/");
 
 	tag_content_ptr = html_get_tag_content(buf, "<title");
+
+	char *_p;
+
+	if ((_p = strstr(tag_content_ptr, " - Wiki")))
+		*_p = 0;
 
 	buf_append(&content_buf, tag_content_ptr);
 	__normalise_file_title(&content_buf);
@@ -1291,9 +1300,9 @@ extract_wiki_article(buf_t *buf)
 		article_header.content_len->vlen = strlen(article_header.content_len->value);
 		
 		sprintf(buffer,
-			"      __________________________________________________________\n\n"
+			" ______________________________________________________________________\n\n"
 			"                    Downloaded via WikiGrab v%s\n"
-			"      __________________________________________________________\n\n"
+			" ______________________________________________________________________\n\n"
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n"
@@ -1301,8 +1310,8 @@ extract_wiki_article(buf_t *buf)
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n"
-			"%*s%s\n\n"
-			"      __________________________________________________________\n\n\n",
+			"%*s%s\n"
+			" ______________________________________________________________________\n\n\n",
 			WIKIGRAB_BUILD,
 			LEFT_ALIGN_WIDTH, "Title: ", article_header.title->value,
 			LEFT_ALIGN_WIDTH, "Served-by: ", article_header.server_name->value,
