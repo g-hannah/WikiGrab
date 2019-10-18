@@ -350,74 +350,6 @@ __replace_html_entities(buf_t *buf)
 	return;
 }
 
-#if 0
-static void
-__remove_garbage(buf_t *buf)
-{
-	buf_t copy_buf;
-	char *p;
-	char *q;
-	char *savep;
-	char *tail = buf->buf_tail;
-	size_t range;
-
-	buf_init(&copy_buf, DEFAULT_MAX_LINE_SIZE * 2);
-	p = savep = buf->buf_head;
-
-	while(1)
-	{
-		p = memchr(savep, 0x2e, (tail - savep));
-
-		if (!p)
-			break;
-
-		savep = p;
-		while (!isspace(*p))
-			--p;
-
-		q = savep;
-		while (!isspace(*q))
-			++q;
-
-		range = (q - p);
-
-		buf_append_ex(&copy_buf, p, range);
-
-		if ((*(q-1) == 0x2e) /* End of a line */
-		|| (*(q-1) == ')' && *(q-2) == 0x2e) /* End of line in parenthesis */
-		|| strstr(copy_buf.buf_head, "&lt;")
-		|| strstr(copy_buf.buf_head, "&gt;")
-		|| strstr(copy_buf.buf_head, "&quot;")
-		|| strstr(copy_buf.buf_head, "&amp;")
-		|| strstr(copy_buf.buf_head, "&nbsp;")
-		|| (isdigit(*(savep-1)) && isdigit(*(savep+1))) /* e.g., "Version 2.0" */
-		|| (!memchr(p, '-', range)
-		&& !memchr(p, '{', range)
-		&& !memchr(p, '}', range)
-		&& !memchr(p, '#', range)
-		&& !memchr(p, ';', range)
-		&& !memchr(p, '(', range)
-		&& !memchr(p, ')', range)
-		&& !memchr(p, '-', range)))
-		{
-			p = savep = q;
-			continue;
-		}
-
-#ifdef DEBUG
-		printf("removing LINE_BEGIN|%.*s|LINE_END\n", (int)range, savep);
-#endif
-		buf_collapse(buf, (off_t)(p - buf->buf_head), range);
-		tail = buf->buf_tail;
-		savep = p;
-	}
-
-	buf_destroy(&copy_buf);
-
-	return;
-}
-#endif
-
 /*
  * buf_shift() could require extending the buffer,
  * and this in turn could result in our data
@@ -949,126 +881,6 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 	return -1;
 }
 
-#if 0
-static int
-__remove_braces(buf_t *buf)
-{
-	assert(buf);
-
-	char *tail = buf->buf_tail;
-	char *p;
-	char *savep;
-	char *outer_start;
-	char *outer_end;
-	char *search_from;
-	int depth = 0;
-	size_t range;
-
-/*
- * 1. FIND LEFT BRACE
- * 2. IF NO LEFT BRACE, GOTO 9, ELSE FIND NEXT RIGHT BRACE
- * 3. SEARCH [LEFTBRACE+1,RIGHT_BRACE) FOR MORE LEFT BRACES
- * 4. IF MORE LEFT BRACES, FIND EQUAL NUMBER OF RIGHT BRACES FROM [RIGHTBRACE+1...TAIL), ELSE GOTO 7
- * 5. SEARCH RANGE [RIGHTBRACE+1...NEW RIGHT BRACE) FOR MORE LEFT BRACES
- * 6. GOTO 4
- * 7. REMOVE RANGE [FIRST LEFT BRACE...LAST RIGHT BRACE]
- * 8. GO TO START OF BUFFER, GOTO 1
- * 9. END
- */
-
-/*
- * TODO: Use the function __nested_closing_char() to get closing braces
- */
-	while(1)
-	{
-		p = savep = buf->buf_head;
-		depth = 0;
-
-		outer_start = memchr(savep, 0x7b, (tail - savep));
-
-		if (!outer_start)
-			goto out;
-
-		search_from = (outer_start + 1);
-		outer_end = memchr(search_from, 0x7d, (tail - search_from));
-
-		if (!outer_end)
-		{
-			outer_end = tail;
-			goto out_collapse;
-		}
-
-		++outer_end;
-
-		for(;;)
-		{
-			savep = search_from;
-			depth = 0;
-
-			while(1)
-			{
-				p = memchr(savep, 0x7b, (outer_end - savep));
-
-				if (!p)
-					break;
-
-				++depth;
-
-				savep = ++p;
-
-				if (p >= outer_end)
-					break;
-			}
-
-			if (depth == 0) /* then we've found the outermost right brace for our initial left brace */
-			{
-#ifdef DEBUG
-				printf("removing \x1b[38;5;9mLINE_START\x1b[m%.*s\x1b[38;5;9mLINE_END\x1b[m\n", (int)(outer_end - outer_start), outer_start);
-#endif
-				buf_collapse(buf, (off_t)(outer_start - buf->buf_head), (outer_end - outer_start));
-				break;
-			}
-
-			search_from = outer_end;
-			savep = search_from;
-
-			while (depth > 0)
-			{
-				if (*outer_end != 0x7d)
-					outer_end = memchr(savep, 0x7d, (tail - savep));
-
-				if (!outer_end)
-				{
-					outer_end = tail;
-					goto out_collapse;
-				}
-
-				--depth;
-
-				++outer_end;
-				savep = outer_end;
-
-				if (savep >= tail)
-					break;
-			}
-		} /* for(;;) */
-	} /* while(1) */
-
-
-	/*
-	 * We jump here if we never found a matching closing
-	 * right brace, so we just clear from the outer
-	 * left brace to the tail of the buffer.
-	 */
-	out_collapse:
-	range = (outer_end - outer_start);
-	buf_collapse(buf, (off_t)(outer_start - buf->buf_head), range);
-
-	out:
-	return 0;
-}
-#endif
-
 static void
 __normalise_file_title(buf_t *buf)
 {
@@ -1293,8 +1105,8 @@ extract_wiki_article(buf_t *buf)
 	article_header.server_name->value[len] = 0;
 	article_header.server_name->vlen = len;
 
-	if (data->vlen < MAX_VALUE_LEN)
-		len = data->vlen;
+	if (date->vlen < MAX_VALUE_LEN)
+		len = date->vlen;
 	else
 		len = MAX_VALUE_LEN;
 
@@ -1451,6 +1263,9 @@ extract_wiki_article(buf_t *buf)
 	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
 	{
+#ifdef DEBUG
+		fprintf(stderr, "#%d: %s\n\n", i, cp->data);
+#endif
 		buf_append_ex(&content_buf, cp->data, cp->data_len);
 		buf_append(&content_buf, "\n");
 		++cp;
@@ -1474,8 +1289,6 @@ extract_wiki_article(buf_t *buf)
 	__remove_inline_refs(&content_buf);
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
-	//__remove_garbage(&content_buf);
-	//__remove_braces(&content_buf);
 	__remove_excess_nl(&content_buf);
 	remove_excess_sp(&content_buf);
 
