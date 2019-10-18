@@ -259,7 +259,7 @@ wiki_cache_create(char *name,
 	cachep->dtor = dtor;
 
 #ifdef DEBUG
-	printf(
+	fprintf(stderr,
 			"Created cache \"%s\"\n"
 			"Size of each object=%lu bytes\n"
 			"Capacity of cache=%d objects\n"
@@ -372,7 +372,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		if (in_cache)
 			active_ptr_offset = (off_t)((char *)active_ptr_addr - (char *)cachep->cache);
 
-		if (!(cachep->cache = realloc(cachep->cache, new_capacity)))
+		if (!(cachep->cache = realloc(cachep->cache, (new_capacity * cachep->objsize))))
 			goto fail_release_mem;
 
 		cachep->capacity = new_capacity;
