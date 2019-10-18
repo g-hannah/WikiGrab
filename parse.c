@@ -1056,7 +1056,7 @@ extract_wiki_article(buf_t *buf)
 	if (server->vlen < MAX_VALUE_LEN)
 		len = server->vlen;
 	else
-		len = MAX_VALUE_LEN;
+		len = (MAX_VALUE_LEN - 1);
 
 	strncpy(article_header.server_name->value, server->value, len);
 	article_header.server_name->value[len] = 0;
@@ -1065,7 +1065,7 @@ extract_wiki_article(buf_t *buf)
 	if (date->vlen < MAX_VALUE_LEN)
 		len = date->vlen;
 	else
-		len = MAX_VALUE_LEN;
+		len = (MAX_VALUE_LEN - 1);
 
 	strncpy(article_header.downloaded->value, date->value, len);
 	article_header.downloaded->value[len] = 0;
@@ -1074,7 +1074,7 @@ extract_wiki_article(buf_t *buf)
 	if (lastmod->vlen < MAX_VALUE_LEN)
 		len = lastmod->vlen;
 	else
-		len = MAX_VALUE_LEN;
+		len = (MAX_VALUE_LEN - 1);
 
 	strncpy(article_header.lastmod->value, lastmod->value, len);
 	article_header.lastmod->value[len] = 0;
@@ -1105,7 +1105,7 @@ extract_wiki_article(buf_t *buf)
 	if (vlen < MAX_VALUE_LEN)
 		len = vlen;
 	else
-		len = MAX_VALUE_LEN;
+		len = (MAX_VALUE_LEN - 1);
 
 	strncpy(article_header.title->value, tag_content_ptr, len);
 	article_header.title->value[len] = 0;
@@ -1118,7 +1118,7 @@ extract_wiki_article(buf_t *buf)
 	if (vlen < MAX_VALUE_LEN)
 		len = vlen;
 	else
-		len = MAX_VALUE_LEN;
+		len = (MAX_VALUE_LEN - 1);
 
 	strncpy(article_header.generator->value, tag_content_ptr, len);
 	article_header.generator->value[len] = 0;
@@ -1184,7 +1184,8 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "mw-empty-elt");
 	html_remove_elements_class(&content_buf, "mw-editsection");
 	html_remove_elements_class(&content_buf, "citation");
-	//html_remove_elements_attribute(&content_buf, "displaystyle", "false");
+	html_remove_elements_class(&content_buf, "infobox");
+	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
 	html_remove_content(&content_buf, "<style", "</style");
 
 /* Stuff we want */
@@ -1194,9 +1195,21 @@ extract_wiki_article(buf_t *buf)
 	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
 		goto out_destroy_file;
 
-	if (html_get_all(content_cache, &content_buf, "<li", "</li") < 0)
+/*
+ * If we put "<li", it will parse "<link" and possibly match it with </li>.
+ * So we have to put <li>. In any case, it would seem that the only <li>
+ * content that is of the format "<li class=..." is that related to
+ * citations, references, etc, which we do not want anyway. The ones that
+ * are formatted as <li> in articles seems to be what we are after.
+ */
+	if (html_get_all(content_cache, &content_buf, "<li>", "</li>") < 0)
 		goto out_destroy_file;
 
+/*
+ * Use this instead of taking <math> tags because we can end up with several
+ * duplicate equations sometimes due to one being here and one also being
+ * elsewhere (not bounded in <>)
+ */
 	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
 		goto out_destroy_file;
 
@@ -1205,10 +1218,9 @@ extract_wiki_article(buf_t *buf)
 
 	buf_clear(&content_buf);
 
-	/*
-	 * Sort all the <p>,<ul>,<table>, etc based on offsets
-	 * from the start of the extracted area data.
-	 */
+/*
+ * Now sort the extracted content by offset from start of buffer.
+ */
 	qsort((void *)content_cache->cache,
 				(size_t)wiki_cache_nr_used(content_cache),
 				content_cache->objsize,
@@ -1286,7 +1298,7 @@ extract_wiki_article(buf_t *buf)
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n\n"
-			"      __________________________________________________________\n\n",
+			"      __________________________________________________________\n\n\n",
 			WIKIGRAB_BUILD,
 			LEFT_ALIGN_WIDTH, "Title: ", article_header.title->value,
 			LEFT_ALIGN_WIDTH, "Served-by: ", article_header.server_name->value,
@@ -1298,8 +1310,20 @@ extract_wiki_article(buf_t *buf)
 			LEFT_ALIGN_WIDTH, "Content-length: ", article_header.content_len->value);
 	}
 
-	write(out_fd, buffer, strlen(buffer));
-	buf_write_fd(out_fd, &content_buf);
+/*
+ * Remove trailing new lines at end of article.
+ */
+	if (*(content_buf.buf_tail - 1) == 0x0a)
+	{
+		char *t = content_buf.buf_tail - 1;
+		while (*t == 0x0a)
+			--t;
+		++t;
+		buf_snip(&content_buf, (content_buf.buf_tail - t));
+	}
+
+	write(out_fd, buffer, strlen(buffer)); /* Our article header */
+	buf_write_fd(out_fd, &content_buf); /* The article */
 	close(out_fd);
 	out_fd = -1;
 
