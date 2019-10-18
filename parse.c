@@ -920,49 +920,6 @@ __normalise_file_title(buf_t *buf)
 	return;
 }
 
-static void
-__remove_excess_nl(buf_t *buf)
-{
-	assert(buf);
-
-	char *p;
-	char *savep;
-	char *tail = buf->buf_tail;
-	size_t range;
-
-	savep = buf->buf_head;
-
-	while (1)
-	{
-		p = memchr(savep, 0x0a, (tail - savep));
-
-		if (!p)
-			break;
-
-		savep = p;
-
-		while (*p == 0x0a && p < tail)
-			++p;
-
-		range = (p - savep);
-
-		if (range > 2)
-		{
-			savep += 2;
-
-			range = (p - savep);
-
-			buf_collapse(buf, (off_t)(savep - buf->buf_head), range);
-			p = savep;
-			tail = buf->buf_tail;
-		}
-
-		savep = p;
-	}
-
-	return;
-}
-
 static int
 parse_maths_expressions(buf_t *buf)
 {

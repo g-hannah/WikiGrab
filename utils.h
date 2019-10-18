@@ -6,5 +6,6 @@
 
 char *nested_closing_char(char *, char *, char, char) __nonnull((1,2)) __wur;
 void remove_excess_sp(buf_t *) __nonnull((1));
+void remove_excess_nl(buf_t *) __nonnull((1));
 
 #endif /* !defined UTILS_H */
