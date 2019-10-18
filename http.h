@@ -38,29 +38,12 @@
 #define HTTP_PORT_NR	80
 #define HTTPS_PORT_NR 443
 
-typedef struct http_link_t
-{
-	int status_code;
-	char *url;
-	time_t time_reaped;
-	int used;
-} http_link_t;
-
-#define http_nr_cookies(h) ((h)->nr_cookies)
-#define http_nr_links(h) ((h)->nr_links)
-#define http_nr_requests(h) ((h)->nr_requests)
-
-/*
- * TODO:
- * Implement RING linked list (like in Apache)
- */
-typedef struct http_state_t
-{
-	int nr_requests; /* total number page requests we've sent */
-	int nr_links; /* total number links we've reaped */
-	http_link_t *head;
-	char *base_page; /* website specified by user */
-} http_state_t;
+#define HTTP_EOH(BUF)\
+({\
+	char *___p_t_r = strstr((BUF)->buf_head, HTTP_EOH_SENTINEL);\
+	___p_t_r += strlen(HTTP_EOH_SENTINEL);\
+	___p_t_r;\
+})
 
 typedef struct http_header_t
 {
