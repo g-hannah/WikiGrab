@@ -1181,6 +1181,7 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "box-Multiple_issues");
 	html_remove_elements_class(&content_buf, "mw-references-wrap");
 	html_remove_elements_class(&content_buf, "toc");
+	html_remove_elements_class(&content_buf, "mw-empty-elt");
 	html_remove_elements_class(&content_buf, "mw-editsection");
 	html_remove_elements_class(&content_buf, "citation");
 	//html_remove_elements_attribute(&content_buf, "displaystyle", "false");
@@ -1220,9 +1221,6 @@ extract_wiki_article(buf_t *buf)
 	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
 	{
-#ifdef DEBUG
-		fprintf(stderr, "#%d: %s\n\n", i, cp->data);
-#endif
 		buf_append_ex(&content_buf, cp->data, cp->data_len);
 		buf_append(&content_buf, "\n");
 		++cp;
@@ -1230,29 +1228,12 @@ extract_wiki_article(buf_t *buf)
 
 	parse_maths_expressions(&content_buf);
 
-#if 0
-	/*
-	 * Mark certain HTML tags so we
-	 * can correctly format the text file.
-	 */
-	if (option_set(OPT_FORMAT_TXT))
-	{
-		__mark_list_tags(&content_buf);
-		__mark_table_tags(&content_buf);
-	}
-#endif
-
 	__remove_html_tags(&content_buf);
 	__remove_inline_refs(&content_buf);
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
-	__remove_excess_nl(&content_buf);
+	remove_excess_nl(&content_buf);
 	remove_excess_sp(&content_buf);
-
-	/*
- 	 * List marks for .txt format will be dealt with
-	 * in __do_format_txt()
-	 */
 
 	if (option_set(OPT_FORMAT_XML))
 	{
