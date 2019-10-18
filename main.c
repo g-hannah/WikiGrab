@@ -159,11 +159,12 @@ main(int argc, char *argv[])
 	}
 
 	printf(
-		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"
+		"________________________________________\n"
 		"\n"
-		"      WikiGrab v%s\n"
+		"          WikiGrab v%s\n"
 		"\n"
-		"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n\n",
+		" Written by Gary Hannah\n"
+		"________________________________________\n\n",
 		WIKIGRAB_BUILD);
 
 	check_wikigrab_dir();
