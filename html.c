@@ -11,6 +11,9 @@
 
 static content_t *content = NULL;
 
+#define mark_start(p) ((*p) = 0x01)
+#define mark_end(p) ((*(p-1)) = 0x02)
+
 int
 html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const char *close_pattern)
 {
@@ -19,67 +22,116 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 	assert(open_pattern);
 	assert(close_pattern);
 
-	char *savep = buf->buf_head;
-	char *tail = buf->buf_tail;
+	char *p;
+	char *savep;
 	char *start;
 	char *end;
+	char *search_from;
 	size_t len;
+	int depth;
 
-	while(1)
+while (1)
+{
+	savep = buf->buf_head;
+	start = strstr(savep, open_pattern);
+	if (!start || start >= buf->buf_tail)
+		break;
+
+	search_from = savep = (start + 1);
+	end = strstr(search_from, close_pattern);
+	if (!end || end > buf->buf_tail)
+		break;
+	
+	while (1)
 	{
-		start = strstr(savep, open_pattern);
+		depth = 0;
+		while (1)
+		{
+			p = strstr(savep, open_pattern);
+			if (!p || p >= end)
+				break;
 
-		if (!start || start >= tail)
+			++depth;
+			savep = ++p;
+			if (p >= end)
+				break;
+		}
+
+		if (!depth)
 			break;
 
-		savep = start;
-		end = strstr(savep, close_pattern);
+		search_from = savep = (end + 1);
+		while (depth)
+		{
+			p = strstr(savep, close_pattern);
+	
+			if (!p || p >= buf->buf_tail)
+				break;
 
-		if (!end || end >= tail)
+			--depth;
+			end = p;
+			savep = ++p;
+			if (p >= buf->buf_tail)
+				break;
+		}
+	}
+
+	if (end)
+	{
+		p = memchr(end, '>', (buf->buf_tail - end));
+		if (p)
+		{
+			end = ++p;
+		}
+		else
+		{
+			end += strlen(close_pattern);
+		}
+
+		if (end > buf->buf_tail)
+			end = buf->buf_tail;
+
+		fprintf(stderr, "Got content:\n\n%.*s\n\n", (int)(end - start), start);
+		fprintf(stderr, "Length: %lu bytes (offset from start of buffer: %lu)\n", (end - start), (start - buf->buf_head));
+
+		content = wiki_cache_alloc(cachep, &content);
+
+		if (!content)
 			break;
 
-		savep = end;
-		end = memchr(savep, 0x3e, (tail - savep));
+		len = (end - start);
+		if (len >= content->alloc_len)
+		{
+			content->data = realloc(content->data, __ALIGN(len+1));
+			if (!content->data)
+				goto fail;
+			content->alloc_len = __ALIGN(len+1);
+		}
+
+		memcpy((void *)content->data, (void *)start, len);
+		content->data[len] = 0;
+		content->data_len = len;
+		content->off = (off_t)(start - buf->buf_head);
+
+		mark_start(start);
+		mark_end(end);
+	}
+}
+
+	while (1)
+	{
+		start = memchr(buf->buf_head, 0x01, buf->data_len);
+
+		if (!start)
+			break;
+
+		end = memchr(start, 0x02, (buf->buf_tail - start));
 
 		if (!end)
 			break;
 
 		++end;
-		content = wiki_cache_alloc(cachep, &content);
-
-		if (!content)
-			goto fail;
-
-		len = (end - start);
-
-		if (len >= content->alloc_len)
-		{
-#ifdef DEBUG
-			printf("reallocating memory @ %p\n", content->data);
-#endif
-			if (!(content->data = realloc(content->data, len+1)))
-				goto fail;
-
-			content->alloc_len = len+1;
-#ifdef DEBUG
-			printf("memory is now at @ %p\n", content->data);
-#endif
-		}
-
-		assert((end - start) < content->alloc_len);
-		strncpy(content->data, start, len);
-		content->data_len = len;
-		content->off = (off_t)(start - buf->buf_head);
 		buf_collapse(buf, (off_t)(start - buf->buf_head), (end - start));
-		end = start;
-		tail = buf->buf_tail;
-
-		savep = end;
-
-		if (savep >= tail)
-			break;
-
-		content = NULL;
 	}
 
 	return 0;
@@ -127,6 +179,7 @@ html_get_tag_field(buf_t *buf, const char *tag, const char *field)
 	if (!p)
 		return NULL;
 
+	assert((p - savep) < 8192);
 	strncpy(tag_content, savep, (p - savep));
 	tag_content[p - savep] = 0;
 
@@ -162,6 +215,7 @@ html_get_tag_content(buf_t *buf, const char *tag)
 	if (!p)
 		return NULL;
 
+	assert((p - savep) < 8192);
 	strncpy(tag_content, savep, (p - savep));
 	tag_content[p - savep] = 0;
 
@@ -181,20 +235,9 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 	char *search_from;
 	char *begin;
 	char *final;
-	buf_t otag_part;
 	int depth = 0;
 
 	savep = buf->buf_head;
-	buf_init(&otag_part, 64);
-
-	p = open_tag;
-	savep = memchr(p, ' ', strlen(open_tag));
-	if (savep)
-		buf_append_ex(&otag_part, p, (savep - p));
-	else
-		buf_append(&otag_part, open_tag);
-
-	*(otag_part.buf_tail) = 0;
 
 	while (1)
 	{
@@ -202,7 +245,6 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 		begin = strstr(savep, open_tag);
 		if (!begin || begin >= tail)
 			break;
-		//goto out_destroy_buf;
 
 		search_from = (begin + 1);
 
@@ -210,7 +252,6 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 
 		if (!final || final >= tail)
 			break;
-		//goto out_destroy_buf;
 
 		while (1)
 		{
@@ -219,7 +260,7 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 
 			while (1)
 			{
-				p = strstr(savep, otag_part.buf_head);
+				p = strstr(savep, open_tag);
 
 				if (!p || p >= final)
 					break;
@@ -237,7 +278,10 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 				p = strstr(savep, close_tag);
 
 				if (!p || p >= tail)
+				{
+					final = tail;
 					break;
+				}
 
 				--depth;
 				final = p;
@@ -246,19 +290,30 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 		}
 
 		p = memchr(final, '>', (tail - final));
-		if (!p)
-			final += strlen(close_tag);
-		else
-			final = ++p;
 
-#ifdef DEBUG
-	fprintf(stderr, "Removing content:\n\n%.*s\n\n", (int)(final - begin), begin);
-#endif
+		if (final < tail)
+		{
+			if (!p)
+			{
+				final += strlen(close_tag);
+			}
+			else
+			{
+				final = ++p;
+			}
+
+			if (final > tail)
+				final = tail;
+		}
+		else
+		{
+			final = tail;
+		}
 
 		buf_collapse(buf, (off_t)(begin - buf->buf_head), (final - begin));
+		tail = buf->buf_tail;
 	}
 
-	buf_destroy(&otag_part);
 	return;
 }
 
@@ -282,7 +337,6 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	char *content_end;
 	char *search_from;
 	int got_tag = 0;
-	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
@@ -367,12 +421,11 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 		}
 
 		right_angle = memchr(content_end, '>', (tail - content_end));
-		content_end = (right_angle + 1);
-		range = (content_end - left_angle);
-#ifdef DEBUG
-		fprintf(stderr, "Removing content of class \"%s\"\n\n%.*s\n\n", classname, (int)range, left_angle);
-#endif
-		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
+
+		if (right_angle)
+			content_end = (right_angle + 1);
+
+		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), (content_end - left_angle));
 		tail = buf->buf_tail;
 		savep = left_angle;
 	}
