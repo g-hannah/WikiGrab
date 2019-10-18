@@ -1185,6 +1185,8 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "mw-editsection");
 	html_remove_elements_class(&content_buf, "citation");
 	html_remove_elements_class(&content_buf, "infobox");
+	html_remove_elements_class(&content_buf, "navbox");
+	html_remove_elements_class(&content_buf, "box-Cleanup");
 	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
 	html_remove_content(&content_buf, "<style", "</style");
 
@@ -1213,10 +1215,10 @@ extract_wiki_article(buf_t *buf)
 	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
 		goto out_destroy_file;
 
-	if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
-		goto out_destroy_file;
+	//if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
+		//goto out_destroy_file;
 
-	buf_clear(&content_buf);
+	//buf_clear(&content_buf);
 
 /*
  * Now sort the extracted content by offset from start of buffer.
@@ -1229,6 +1231,8 @@ extract_wiki_article(buf_t *buf)
 	int i;
 	int nr_used = wiki_cache_nr_used(content_cache);
 	content_t *cp;
+
+	buf_clear(&content_buf);
 
 	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
