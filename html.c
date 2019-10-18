@@ -30,9 +30,10 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 	size_t len;
 	int depth;
 
+	savep = buf->buf_head;
+
 while (1)
 {
-	savep = buf->buf_head;
 	start = strstr(savep, open_pattern);
 	if (!start || start >= buf->buf_tail)
 		break;
@@ -61,6 +62,12 @@ while (1)
 			break;
 
 		search_from = savep = (end + 1);
+
+		if (search_from >= buf->buf_tail)
+		{
+			goto done;
+		}
+
 		while (depth)
 		{
 			p = strstr(savep, close_pattern);
@@ -91,8 +98,6 @@ while (1)
 		if (end > buf->buf_tail)
 			end = buf->buf_tail;
 
-		fprintf(stderr, "Got content:\n\n%.*s\n\n", (int)(end - start), start);
-		fprintf(stderr, "Length: %lu bytes (offset from start of buffer: %lu)\n", (end - start), (start - buf->buf_head));
 
 		content = wiki_cache_alloc(cachep, &content);
 
@@ -100,6 +105,10 @@ while (1)
 			break;
 
 		len = (end - start);
+
+		assert(len < buf->data_len);
+		assert(len >= 0);
+
 		if (len >= content->alloc_len)
 		{
 			content->data = realloc(content->data, __ALIGN(len+1));
@@ -108,16 +117,24 @@ while (1)
 			content->alloc_len = __ALIGN(len+1);
 		}
 
+		assert(len <= content->alloc_len);
+		assert(len < buf->data_len);
 		memcpy((void *)content->data, (void *)start, len);
 		content->data[len] = 0;
 		content->data_len = len;
 		content->off = (off_t)(start - buf->buf_head);
+		assert(content->off < buf->data_len);
 
-		mark_start(start);
-		mark_end(end);
+		savep = end;
+
+		//mark_start(start);
+		//mark_end(end);
 	}
 }
 
+	done:
+
+#if 0
 	while (1)
 	{
 		start = memchr(buf->buf_head, 0x01, buf->data_len);
@@ -133,6 +150,7 @@ while (1)
 		++end;
 		buf_collapse(buf, (off_t)(start - buf->buf_head), (end - start));
 	}
+#endif
 
 	return 0;
 
