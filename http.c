@@ -50,36 +50,217 @@ wiki_cache_http_cookie_dtor(void *hh)
 	return;
 }
 
-int
-wiki_cache_http_link_ctor(void *http_link)
+static ssize_t
+__read_bytes(connection_t *conn, size_t toread)
 {
-	http_link_t *hl = (http_link_t *)http_link;
-	clear_struct(hl);
+	assert(conn);
+	assert(toread > 0);
 
-	hl->url = calloc(HTTP_URL_MAX+1, 1);
+	ssize_t n;
+	SSL *ssl = conn->ssl;
+	int sock = conn->sock;
+	size_t r = toread;
+	buf_t *buf = &conn->read_buf;
 
-	if (!hl->url)
-		return -1;
-
-	memset(hl->url, 0, HTTP_URL_MAX+1);
-	return 0;
-}
-
-void
-wiki_cache_http_link_dtor(void *http_link)
-{
-	assert(http_link);
-
-	http_link_t *hl = (http_link_t *)http_link;
-
-	if (hl->url)
+	while (r)
 	{
-		free(hl->url);
-		hl->url = NULL;
+		if (option_set(OPT_USE_TLS))
+			n = buf_read_tls(ssl, buf, r);
+		else
+			n = buf_read_socket(sock, buf, r);
+
+		if (n < 0)
+			return -1;
+		else
+		if (!n)
+			continue;
+		else
+			r -= n;
 	}
 
-	clear_struct(hl);
+	return toread;
+}
+
+#define HTTP_MAX_CHUNK_STR 10
+
+static void
+__http_read_until_next_chunk_size(connection_t *conn, buf_t *buf, char **cur_pos)
+{
+	assert(conn);
+	assert(buf);
+	assert(cur_pos);
+	assert(buf_integrity(buf));
+
+	off_t cur_pos_off = (*cur_pos - buf->buf_head);
+	char *q;
+	char *tail = buf->buf_tail;
+
+	if (*cur_pos < tail)
+	{
+		if (**cur_pos == 0x0d)
+		{
+			while ((**cur_pos == 0x0d || **cur_pos == 0x0a) && *cur_pos < tail)
+				++(*cur_pos);
+
+			if (*cur_pos != tail)
+			{
+				q = *cur_pos;
+
+				while (*q != 0x0d && q < tail)
+					++q;
+
+				if (q != tail)
+				{
+					*cur_pos -= 2;
+					return;
+				}
+			}
+		}
+	}
+
+	__read_bytes(conn, 2);
+	*cur_pos = (buf->buf_head + cur_pos_off);
+	tail = buf->buf_tail;
+	*cur_pos += 2;
+	cur_pos_off += 2;
+
+	while (1)
+	{
+		__read_bytes(conn, 1);
+		tail = buf->buf_tail;
+		*cur_pos = (buf->buf_head + cur_pos_off);
+		q = memchr(*cur_pos, 0x0a, (tail - *cur_pos));
+		if (q)
+		{
+			*cur_pos -= 2; /* point it back to START_OF_CHUNK_DATA + CHUNK_SIZE */
+			break;
+		}
+	}
+
 	return;
+}
+
+#define SKIP_CRNL(p)\
+do {\
+	while ((*p) == 0x0a || (*p) == 0x0d)\
+		++(p);\
+} while (0)
+
+static size_t
+__http_do_chunked_recv(connection_t *conn)
+{
+	assert(conn);
+
+	char *p;
+	char *e;
+	off_t chunk_offset;
+	buf_t *buf = &conn->read_buf;
+	size_t chunk_size;
+	size_t save_size;
+	size_t overread;
+	size_t range;
+	char *t;
+	static char tmp[HTTP_MAX_CHUNK_STR];
+
+	p = HTTP_EOH(buf);
+
+	while (!p)
+	{
+		__read_bytes(conn, 1);
+		p = HTTP_EOH(buf);
+	}
+
+	if (!p)
+	{
+		fprintf(stderr, "__http_do_chunked_recv: failed to find end of header sentinel\n");
+		return -1;
+	}
+
+	__http_read_until_next_chunk_size(conn, buf, &p);
+
+	while (1)
+	{
+		t = p;
+		SKIP_CRNL(p);
+
+		range = (p - t);
+		if (range)
+		{
+			buf_collapse(buf, (off_t)(t - buf->buf_head), range);
+			p = t;
+		}
+
+		e = memchr(p, 0x0d, HTTP_MAX_CHUNK_STR);
+
+		if (!e)
+		{
+			fprintf(stderr, "__http_do_chunked_recv: failed to find next carriage return\n");
+
+			return -1;
+		}
+
+		strncpy(tmp, p, (e - p));
+		tmp[e - p] = 0;
+
+		chunk_size = strtoul(tmp, NULL, 16);
+
+		if (!chunk_size)
+		{
+			--p;
+			buf_collapse(buf, (off_t)(p - buf->buf_head), (buf->buf_tail - p));
+			break;
+		}
+
+		save_size = chunk_size;
+
+		e += 2; /* Skip the \r\n do NOT use SKIP_CRNL(); chunk data could start with these bytes */
+
+		buf_collapse(buf, (off_t)(p - buf->buf_head), (e - p));
+		e = p;
+
+		chunk_offset = (e - buf->buf_head);
+
+		overread = (buf->buf_tail - e);
+
+		if (overread >= chunk_size)
+		{
+			p = (e + save_size);
+			__http_read_until_next_chunk_size(conn, buf, &p);
+		}
+		else
+		{
+			chunk_size -= overread;
+		}
+
+		__read_bytes(conn, chunk_size);
+
+		p = (buf->buf_head + chunk_offset + save_size);
+		__http_read_until_next_chunk_size(conn, buf, &p);
+
+#if 0
+/*
+ * BS=BUF_START ; CS=CHUNK_START ; CE=CHUNK_END ; b=byte
+ *
+ * |BSbbbbbbbbbbCSbbbbbbbbbbbbbbbbbbbbbbbbbCE\r\n5a8\r\n......
+ *                                               ^
+ *                                             __next_size
+ * This is absolutey where __next_size should be pointing after
+ * the below... Something is very wrong if the assertions fail.
+ *
+ * EDIT:
+ * Assertion *(__next_size - 2) == '\r' was failing in a certain
+ * case after the final chunk, jumping forward from buf_head
+ * chunk_offset + save_size + 2, was pointing ONE byte past the
+ * 30 byte: 0d0a0d0a300d0a
+ *                    ^
+ * To solve this, don't jump forward the extra 2 bytes, and then
+ * use SKIP_CRNL to land on the start of the next size string.
+ *
+ */
+#endif
+	}
+
+	return 0;
 }
 
 int
@@ -172,6 +353,16 @@ http_recv_response(connection_t *conn)
 	size_t clen;
 	size_t header_len;
 	size_t deduct;
+	http_header_t *transfer_enc = NULL;
+	http_header_t *content_len = NULL;
+
+	content_len = wiki_cache_alloc(http_hcache, &content_len);
+	if (!content_len)
+		goto fail;
+
+	transfer_enc = wiki_cache_alloc(http_hcache, &transfer_enc);
+	if (!transfer_enc)
+		goto fail_dealloc;
 
 	while (!p)
 	{
@@ -185,9 +376,16 @@ http_recv_response(connection_t *conn)
 
 	p += strlen(HTTP_EOH_SENTINEL);
 
-	http_header_t *content_len = (http_header_t *)wiki_cache_alloc(http_hcache, &content_len);
-	assert(content_len);
-	assert(wiki_cache_obj_used(http_hcache, (void *)content_len));
+	if (http_fetch_header(&conn->read_buf, "Transfer-Encoding", transfer_enc, (off_t)0))
+	{
+		if (!strncmp("chunked", transfer_enc->value, transfer_enc->vlen))
+		{
+			if (__http_do_chunked_recv(conn) == -1)
+				goto fail_dealloc;
+
+			goto out_dealloc;
+		}
+	}
 
 	if (http_fetch_header(&conn->read_buf, "Content-Length", content_len, (off_t)0))
 	{
@@ -207,7 +405,7 @@ http_recv_response(connection_t *conn)
 				n = buf_read_socket(conn->sock, &conn->read_buf, clen);
 
 			if (n < 0)
-				goto fail;
+				goto fail_dealloc;
 
 			clen -= n;
 		}
@@ -223,9 +421,20 @@ http_recv_response(connection_t *conn)
 	}
 
 	assert(conn->read_buf.magic == BUFFER_MAGIC);
-	wiki_cache_dealloc(http_hcache, content_len, &content_len);
+
+	out_dealloc:
+	if (content_len)
+		wiki_cache_dealloc(http_hcache, content_len, &content_len);
+	if (transfer_enc)
+		wiki_cache_dealloc(http_hcache, transfer_enc, &transfer_enc);
 
 	return 0;
+
+	fail_dealloc:
+	if (content_len)
+		wiki_cache_dealloc(http_hcache, content_len, &content_len);
+	if (transfer_enc)
+		wiki_cache_dealloc(http_hcache, transfer_enc, &transfer_enc);
 
 	fail:
 	return -1;
