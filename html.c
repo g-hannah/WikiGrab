@@ -189,66 +189,74 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
 
 	p = open_tag;
 	savep = memchr(p, ' ', strlen(open_tag));
-	buf_append_ex(&otag_part, p, (savep - p));
+	if (savep)
+		buf_append_ex(&otag_part, p, (savep - p));
+	else
+		buf_append(&otag_part, open_tag);
+
 	*(otag_part.buf_tail) = 0;
-
-while (1)
-{
-	savep = buf->buf_head;
-	begin = strstr(savep, open_tag);
-	if (!begin || begin >= tail)
-		break;
-		//goto out_destroy_buf;
-
-	search_from = (begin + 1);
-
-	final = strstr(search_from, close_tag);
-
-	if (!final || final >= tail)
-		break;
-		//goto out_destroy_buf;
 
 	while (1)
 	{
-		savep = search_from;
-		depth = 0;
+		savep = buf->buf_head;
+		begin = strstr(savep, open_tag);
+		if (!begin || begin >= tail)
+			break;
+		//goto out_destroy_buf;
+
+		search_from = (begin + 1);
+
+		final = strstr(search_from, close_tag);
+
+		if (!final || final >= tail)
+			break;
+		//goto out_destroy_buf;
 
 		while (1)
 		{
-			p = strstr(savep, otag_part.buf_head);
+			savep = search_from;
+			depth = 0;
 
-			if (!p || p >= final)
+			while (1)
+			{
+				p = strstr(savep, otag_part.buf_head);
+
+				if (!p || p >= final)
+					break;
+
+				++depth;
+				savep = ++p;
+			}
+
+			if (!depth)
 				break;
 
-			++depth;
-			savep = ++p;
+			savep = search_from = (final + 1);
+			while (depth)
+			{
+				p = strstr(savep, close_tag);
+
+				if (!p || p >= tail)
+					break;
+
+				--depth;
+				final = p;
+				savep = ++p;
+			}
 		}
 
-		if (!depth)
-			break;
+		p = memchr(final, '>', (tail - final));
+		if (!p)
+			final += strlen(close_tag);
+		else
+			final = ++p;
 
-		savep = search_from = (final + 1);
-		while (depth)
-		{
-			p = strstr(savep, close_tag);
+#ifdef DEBUG
+	fprintf(stderr, "Removing content:\n\n%.*s\n\n", (int)(final - begin), begin);
+#endif
 
-			if (!p || p >= tail)
-				break;
-
-			--depth;
-			final = p;
-			savep = ++p;
-		}
+		buf_collapse(buf, (off_t)(begin - buf->buf_head), (final - begin));
 	}
-
-	p = memchr(final, '>', (tail - final));
-	if (!p)
-		final += strlen(close_tag);
-	else
-		final = ++p;
-
-	buf_collapse(buf, (off_t)(begin - buf->buf_head), (final - begin));
-}
 
 	buf_destroy(&otag_part);
 	return;
@@ -361,6 +369,9 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 		right_angle = memchr(content_end, '>', (tail - content_end));
 		content_end = (right_angle + 1);
 		range = (content_end - left_angle);
+#ifdef DEBUG
+		fprintf(stderr, "Removing content of class \"%s\"\n\n%.*s\n\n", classname, (int)range, left_angle);
+#endif
 		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 		tail = buf->buf_tail;
 		savep = left_angle;
