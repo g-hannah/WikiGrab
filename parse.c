@@ -1201,6 +1201,7 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "box-Expand_language");
 	html_remove_elements_class(&content_buf, "hatnote");
 	html_remove_elements_class(&content_buf, "vertical-navbox");
+	html_remove_elements_class(&content_buf, "gallery");
 	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
 	html_remove_elements_id(&content_buf, "See_also");
 	html_remove_elements_id(&content_buf, "Notes");
