@@ -4,7 +4,7 @@
 #include "buffer.h"
 
 #define LEFT_ALIGN_WIDTH	20
-#define WIKI_ARTICLE_LINE_LENGTH 72
+#define WIKI_ARTICLE_LINE_LENGTH 92
 #define MAX_VALUE_LEN 1024
 
 #define XML_START_LINE		"<?xml version=\"1.0\" ?>"

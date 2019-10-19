@@ -913,7 +913,9 @@ __normalise_file_title(buf_t *buf)
 	while (!isalpha(*p) && !isdigit(*p))
 		--p;
 
-	if ((buf->buf_tail - p) > 1)
+	++p;
+
+	if ((buf->buf_tail - p) > 0)
 		buf_snip(buf, (buf->buf_tail - p));
 
 	if (option_set(OPT_FORMAT_XML))
@@ -1308,29 +1310,35 @@ extract_wiki_article(buf_t *buf)
 
 		sprintf(article_header.content_len->value, "%lu", content_buf.data_len);
 		article_header.content_len->vlen = strlen(article_header.content_len->value);
+
+		int title_offset = ((WIKI_ARTICLE_LINE_LENGTH - article_header.title->vlen) / 2);
+		int title_width = (title_offset + (int)article_header.title->vlen);
+		static char wgb[64];
+
+		sprintf(wgb, "WikiGrab v%s", WIKIGRAB_BUILD);
 		
 		sprintf(buffer,
-			" ______________________________________________________________________\n\n"
-			"                    Downloaded via WikiGrab v%s\n"
-			" ______________________________________________________________________\n\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%s\n"
-			"%*s%sB\n"
-			" ______________________________________________________________________\n\n\n",
-			WIKIGRAB_BUILD,
-			LEFT_ALIGN_WIDTH, "Title  ", article_header.title->value,
-			LEFT_ALIGN_WIDTH, "Served-by  ", article_header.server_name->value,
-			LEFT_ALIGN_WIDTH, "Generated-by  ", article_header.generator->value,
-			LEFT_ALIGN_WIDTH, "Server-ip-v4  ", article_header.server_ipv4->value,
-			LEFT_ALIGN_WIDTH, "Server-ip-v6  ", article_header.server_ipv6->value,
-			LEFT_ALIGN_WIDTH, "Last-modified  ", article_header.lastmod->value,
-			LEFT_ALIGN_WIDTH, "Downloaded  ", article_header.downloaded->value,
-			LEFT_ALIGN_WIDTH, "Content-length  ", article_header.content_len->value);
+			"\n%*s\n\n"
+			"  {\n"
+			"    \"server\" : \"%s\",\n"
+			"    \"v4-addr\" : \"%s\",\n"
+			"    \"v6-addr\" : \"%s\",\n"
+			"    \"last-modified\" : \"%s\",\n"
+			"    \"generator\" : \"%s\",\n"
+			"    \"content-length\" : \"%s bytes\",\n"
+			"    \"downloaded\" : \"%s\"\n"
+			"  }\n"
+			"\n\n"
+			"%*s\n\n\n",
+			WIKI_ARTICLE_LINE_LENGTH, wgb,
+			article_header.server_name->value,
+			article_header.server_ipv4->value,
+			article_header.server_ipv6->value,
+			article_header.lastmod->value,
+			article_header.generator->value,
+			article_header.content_len->value,
+			article_header.downloaded->value,
+			title_width, article_header.title->value);
 	}
 
 /*
