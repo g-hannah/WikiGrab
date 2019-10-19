@@ -1196,6 +1196,9 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "infobox");
 	html_remove_elements_class(&content_buf, "navbox");
 	html_remove_elements_class(&content_buf, "box-Cleanup");
+	html_remove_elements_class(&content_buf, "box-Expand_language");
+	html_remove_elements_class(&content_buf, "hatnote");
+	html_remove_elements_class(&content_buf, "vertical-navbox");
 	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
 	html_remove_content(&content_buf, "<style", "</style");
 
