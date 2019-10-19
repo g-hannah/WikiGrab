@@ -40,7 +40,7 @@ content_cache_ctor(void *obj)
 		return -1;
 
 #ifdef DEBUG
-	printf(
+	fprintf(stderr,
 		"allocated %lu bytes of memory @ %p (content->data)\n",
 		CONTENT_DATA_SIZE, content->data);
 #endif
@@ -60,14 +60,14 @@ content_cache_dtor(void *obj)
 	content_t *content = (content_t *)obj;
 
 #ifdef DEBUG
-	printf(
+	fprintf(stderr
 		"freeing content_t object:\n"
 		"ptr: %p\n"
-		"data: %*.*s...\n"
+		"data: %s\n"
 		"len: %lu bytes\n"
 		"off: %lu bytes\n",
 		content->data,
-		(int)20, (int)20, content->data,
+		content->data,
 		content->data_len,
 		content->off);
 #endif
@@ -1212,6 +1212,7 @@ extract_wiki_article(buf_t *buf)
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
 		goto out_destroy_file;
 
+
 	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
 		goto out_destroy_file;
 
@@ -1239,8 +1240,6 @@ extract_wiki_article(buf_t *buf)
 	//if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
 		//goto out_destroy_file;
 
-	//buf_clear(&content_buf);
-
 /*
  * Now sort the extracted content by offset from start of buffer.
  */
@@ -1251,11 +1250,9 @@ extract_wiki_article(buf_t *buf)
 
 	int i;
 	int nr_used = wiki_cache_nr_used(content_cache);
-	content_t *cp;
-
+	content_t *cp = (content_t *)content_cache->cache;
 	buf_clear(&content_buf);
 
-	cp = (content_t *)content_cache->cache;
 	for (i = 0; i < nr_used; ++i)
 	{
 		buf_append_ex(&content_buf, cp->data, cp->data_len);
