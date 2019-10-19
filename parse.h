@@ -3,7 +3,7 @@
 
 #include "buffer.h"
 
-#define LEFT_ALIGN_WIDTH	23
+#define LEFT_ALIGN_WIDTH	20
 #define WIKI_ARTICLE_LINE_LENGTH 72
 #define MAX_VALUE_LEN 1024
 

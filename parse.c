@@ -1320,17 +1320,17 @@ extract_wiki_article(buf_t *buf)
 			"%*s%s\n"
 			"%*s%s\n"
 			"%*s%s\n"
-			"%*s%s\n"
+			"%*s%sB\n"
 			" ______________________________________________________________________\n\n\n",
 			WIKIGRAB_BUILD,
-			LEFT_ALIGN_WIDTH, "Title: ", article_header.title->value,
-			LEFT_ALIGN_WIDTH, "Served-by: ", article_header.server_name->value,
-			LEFT_ALIGN_WIDTH, "Generated-by: ", article_header.generator->value,
-			LEFT_ALIGN_WIDTH, "Server-ip-v4: ", article_header.server_ipv4->value,
-			LEFT_ALIGN_WIDTH, "Server-ip-v6: ", article_header.server_ipv6->value,
-			LEFT_ALIGN_WIDTH, "Last-modified: ", article_header.lastmod->value,
-			LEFT_ALIGN_WIDTH, "Downloaded: ", article_header.downloaded->value,
-			LEFT_ALIGN_WIDTH, "Content-length: ", article_header.content_len->value);
+			LEFT_ALIGN_WIDTH, "Title  ", article_header.title->value,
+			LEFT_ALIGN_WIDTH, "Served-by  ", article_header.server_name->value,
+			LEFT_ALIGN_WIDTH, "Generated-by  ", article_header.generator->value,
+			LEFT_ALIGN_WIDTH, "Server-ip-v4  ", article_header.server_ipv4->value,
+			LEFT_ALIGN_WIDTH, "Server-ip-v6  ", article_header.server_ipv6->value,
+			LEFT_ALIGN_WIDTH, "Last-modified  ", article_header.lastmod->value,
+			LEFT_ALIGN_WIDTH, "Downloaded  ", article_header.downloaded->value,
+			LEFT_ALIGN_WIDTH, "Content-length  ", article_header.content_len->value);
 	}
 
 /*
