@@ -1200,6 +1200,10 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_class(&content_buf, "hatnote");
 	html_remove_elements_class(&content_buf, "vertical-navbox");
 	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
+	html_remove_elements_id(&content_buf, "See_also");
+	html_remove_elements_id(&content_buf, "Notes");
+	html_remove_elements_id(&content_buf, "References");
+	html_remove_elements_id(&content_buf, "External_links");
 	html_remove_content(&content_buf, "<style", "</style");
 
 /* Stuff we want */
@@ -1227,6 +1231,9 @@ extract_wiki_article(buf_t *buf)
 	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
 		goto out_destroy_file;
 
+	if (html_get_all_class(content_cache, &content_buf, "mw-headline") < 0)
+		goto out_destroy_file;
+
 	//if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
 		//goto out_destroy_file;
 
@@ -1250,7 +1257,7 @@ extract_wiki_article(buf_t *buf)
 	for (i = 0; i < nr_used; ++i)
 	{
 		buf_append_ex(&content_buf, cp->data, cp->data_len);
-		buf_append(&content_buf, "\n");
+		buf_append(&content_buf, "\n\n");
 		++cp;
 	}
 
