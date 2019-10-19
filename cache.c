@@ -45,8 +45,6 @@ do {\
 	__ap_ctx->obj_addr = (void *)(o);\
 	if (___i_c)\
 		__ap_ctx->ptr_offset = (off_t)((char *)(p) - (char *)cachep->cache);\
-	else\
-		__ap_ctx->ptr_offset = (off_t)0;\
 	__ap_ctx->ptr_addr = (p);\
 	++((c)->nr_active_ptrs);\
 } while (0)
@@ -373,7 +371,12 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 			active_ptr_offset = (off_t)((char *)active_ptr_addr - (char *)cachep->cache);
 
 		if (!(cachep->cache = realloc(cachep->cache, (new_capacity * cachep->objsize))))
+		{
+			fprintf(stderr, "wiki_cache_alloc: failed to reallocate memory for cache objects\n");
 			goto fail_release_mem;
+		}
+
+		void *__slot1 = cachep->cache;
 
 		cachep->capacity = new_capacity;
 		cachep->nr_free += (new_capacity - old_capacity);
@@ -390,7 +393,10 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		}
 
 		if (!(cachep->free_bitmap = realloc(cachep->free_bitmap, new_bitmap_size)))
+		{
+			fprintf(stderr, "wiki_cache_alloc: failed to reallocate memory for cache objects bitmap\n");
 			goto fail_release_mem;
+		}
 
 		cachep->bitmap_size = new_bitmap_size;
 
@@ -401,11 +407,20 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		if (cachep->ctor)
 		{
 			for (i = old_capacity; i < new_capacity; ++i)
+			{
+				assert((unsigned long)__wiki_cache_object(cachep, i) != (unsigned long)__slot1);
 				cachep->ctor(__wiki_cache_object(cachep, i));
+			}
+		}
+
+		if (!(cachep->active_ptrs = realloc(cachep->active_ptrs, (new_capacity * sizeof(struct active_ptr_ctx)))))
+		{
+			fprintf(stderr, "wiki_cache_alloc: failed to reallocate memory for list of cache object owners\n");
+			goto fail_release_mem;
 		}
 
 		idx = __wiki_cache_next_free_idx(cachep);
-		assert(idx >= 0);
+		assert(idx >= old_capacity);
 		assert(idx < new_capacity);
 
 		slot = __wiki_cache_object(cachep, idx);
