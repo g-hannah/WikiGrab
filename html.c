@@ -51,11 +51,13 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 			while (1)
 			{
 				p = strstr(savep, open_pattern);
+
 				if (!p || p >= end)
 					break;
 
 				++depth;
 				savep = ++p;
+
 				if (p >= end)
 					break;
 			}
@@ -104,7 +106,10 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 			content = wiki_cache_alloc(cachep, &content);
 
 			if (!content)
-				break;
+			{
+				fprintf(stderr, "html_get_all: failed to allocate new cache object\n");
+				goto fail;
+			}
 
 			len = (end - start);
 
@@ -113,13 +118,14 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 
 			if (len >= content->alloc_len)
 			{
-				content->data = realloc(content->data, __ALIGN(len+1));
+				size_t new_len = __ALIGN(len+1);
+				content->data = realloc(content->data, new_len);
 				if (!content->data)
 					goto fail;
-				content->alloc_len = __ALIGN(len+1);
+				content->alloc_len = new_len;
 			}
 
-			assert(len <= content->alloc_len);
+			assert(len < content->alloc_len);
 			assert(len < buf->data_len);
 			memcpy((void *)content->data, (void *)start, len);
 			content->data[len] = 0;
