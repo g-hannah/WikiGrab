@@ -304,7 +304,342 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 			content->data_len = len;
 			content->off = (off_t)(left_angle - buf->buf_head);
 
-			fprintf(stderr, "content of class \"%s\"\n\n%s\n\n", classname, content->data);
+			assert(content->off < buf->data_len);
+			assert(content->data_len < buf->data_len);
+			assert(content->data_len < content->alloc_len);
+
+			savep = ++end;
+		}
+	}
+
+	out_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return -1;
+}
+
+int
+html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
+{
+	assert(cachep);
+	assert(buf);
+	assert(id);
+
+	char *p;
+	char *savep;
+	char *left_angle;
+	char *right_angle;
+	char *end;
+	char *search_from;
+	size_t ilen = strlen("id=\"");
+	buf_t open_tag;
+	buf_t close_tag;
+	int got_tags = 0;
+	int depth = 0;
+	size_t len;
+
+	savep = buf->buf_head;
+	buf_init(&open_tag, 64);
+	buf_init(&close_tag, 64);
+
+	while (1)
+	{
+		while (1)
+		{
+			p = strstr(savep, id);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - ilen), "id=\"", ilen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			end = strstr(p, close_tag.buf_head);
+
+			if (!end)
+				goto out_release_bufs;
+
+			search_from = savep = (left_angle + 1);
+
+			while (1)
+			{
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
+					if (!p || p >= end)
+						break;
+
+					savep = ++p;
+					++depth;
+				}
+
+				if (!depth)
+					break;
+
+				search_from = savep = (end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					end = p;
+					savep = ++p;
+					--depth;
+				}
+
+				savep = search_from;
+			}
+
+			right_angle = memchr(end, '>', (buf->buf_tail - end));
+			if (right_angle)
+			{
+				end = (right_angle + 1);
+			}
+			else
+			{
+				end += close_tag.data_len;
+			}
+
+			if (end > buf->buf_tail)
+				end = buf->buf_tail;
+
+			content = wiki_cache_alloc(cachep, &content);
+
+			if (!content)
+				goto fail_release_bufs;
+
+			len = (end - left_angle);
+			if (len >= content->alloc_len)
+			{
+				size_t new_len = __ALIGN(len+1);
+				content->data = realloc(content->data, new_len);
+				if (!content->data)
+				{
+					fprintf(stderr, "html_get_all_id: failed to allocate cache object\n");
+					goto fail_release_bufs;
+				}
+
+				content->alloc_len = new_len;
+			}
+
+			assert(len < content->alloc_len);
+			memcpy((void *)content->data, (void *)left_angle, len);
+			content->data[len] = 0;
+			content->data_len = len;
+			content->off = (off_t)(left_angle - buf->buf_head);
+
+			assert(content->off < buf->data_len);
+			assert(content->data_len < buf->data_len);
+			assert(content->data_len < content->alloc_len);
+
+			savep = ++end;
+		}
+	}
+
+	out_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return -1;
+}
+
+int
+html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, const char *value)
+{
+	assert(cachep);
+	assert(buf);
+	assert(attribute);
+	assert(value);
+
+	char *p;
+	char *savep;
+	char *left_angle;
+	char *right_angle;
+	char *end;
+	char *search_from;
+	size_t alen = strlen(attribute) + 2;
+	buf_t open_tag;
+	buf_t close_tag;
+	int got_tags = 0;
+	int depth = 0;
+	size_t len;
+
+	savep = buf->buf_head;
+	buf_init(&open_tag, 64);
+	buf_init(&close_tag, 64);
+
+	while (1)
+	{
+		while (1)
+		{
+			p = strstr(savep, value);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - alen), attribute, (alen - 2)))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			end = strstr(p, close_tag.buf_head);
+
+			if (!end)
+				goto out_release_bufs;
+
+			search_from = savep = (left_angle + 1);
+
+			while (1)
+			{
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
+					if (!p || p >= end)
+						break;
+
+					savep = ++p;
+					++depth;
+				}
+
+				if (!depth)
+					break;
+
+				search_from = savep = (end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					end = p;
+					savep = ++p;
+					--depth;
+				}
+
+				savep = search_from;
+			}
+
+			right_angle = memchr(end, '>', (buf->buf_tail - end));
+			if (right_angle)
+			{
+				end = (right_angle + 1);
+			}
+			else
+			{
+				end += close_tag.data_len;
+			}
+
+			if (end > buf->buf_tail)
+				end = buf->buf_tail;
+
+			content = wiki_cache_alloc(cachep, &content);
+
+			if (!content)
+				goto fail_release_bufs;
+
+			len = (end - left_angle);
+			if (len >= content->alloc_len)
+			{
+				size_t new_len = __ALIGN(len+1);
+				content->data = realloc(content->data, new_len);
+				if (!content->data)
+				{
+					fprintf(stderr, "html_get_all_id: failed to allocate cache object\n");
+					goto fail_release_bufs;
+				}
+
+				content->alloc_len = new_len;
+			}
+
+			assert(len < content->alloc_len);
+			memcpy((void *)content->data, (void *)left_angle, len);
+			content->data[len] = 0;
+			content->data_len = len;
+			content->off = (off_t)(left_angle - buf->buf_head);
 
 			assert(content->off < buf->data_len);
 			assert(content->data_len < buf->data_len);
@@ -516,106 +851,261 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	assert(classname);
 
 	char *p;
-	char *e;
 	char *savep;
-	char *tail;
 	char *left_angle;
 	char *right_angle;
 	char *content_end;
 	char *search_from;
-	int got_tag = 0;
+	size_t clen = strlen("class=\"");
+	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
-
-	savep = buf->buf_head;
-	tail = buf->buf_tail;
+	int got_tags = 0;
 
 	buf_init(&open_tag, 64);
 	buf_init(&close_tag, 64);
 
+	savep = buf->buf_head;
+
 	while (1)
 	{
-		p = strstr(savep, classname);
-
-		if (!p || p >= tail)
-			break;
-
-		if (strncmp("class=", p - strlen("class=\""), 6))
-		{
-			savep = ++p;
-			continue;
-		}
-
-		left_angle = p;
-		while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
-			--left_angle;
-
-		if (!got_tag)
-		{
-			e = memchr(left_angle, ' ', (p - left_angle));
-
-			if (!e)
-				break;
-
-			buf_append_ex(&open_tag, left_angle, (e - left_angle));
-			*(open_tag.buf_tail) = 0;
-			buf_append(&close_tag, "</");
-			buf_append_ex(&close_tag, (left_angle + 1), ((e - left_angle) - 1));
-			*(close_tag.buf_tail) = 0;
-
-			got_tag = 1;
-		}
-
-		content_end = strstr(p, close_tag.buf_head);
-		if (!content_end || content_end >= tail)
-			break;
-
-		depth = 0;
-		search_from = savep = p;
-
 		while (1)
 		{
+			p = strstr(savep, classname);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - clen), "class=\"", clen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			content_end = strstr(p, close_tag.buf_head);
+
+			if (!content_end || content_end >= buf->buf_tail)
+				goto out_release_bufs;
+
+			search_from = savep = p;
+
 			while (1)
 			{
-				p = strstr(savep, open_tag.buf_head);
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
 
-				if (!p || p >= content_end)
+					if (!p || p >= content_end)
+						break;
+
+					++depth;
+					savep = ++p;
+				}
+
+				if (!depth)
 					break;
 
-				++depth;
-				savep = ++p;
+				search_from = savep = (content_end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					--depth;
+					content_end = p;
+					savep = ++p;
+				}
+
+				savep = search_from;
 			}
 
-			if (!depth)
-				break;
+			right_angle = memchr(content_end, '>', (buf->buf_tail - content_end));
 
-			search_from = savep = (content_end + 1);
+			if (right_angle)
+				content_end = (right_angle + 1);
+			else
+				content_end += close_tag.data_len;
 
-			while (depth)
-			{
-				p = strstr(savep, close_tag.buf_head);
+			if (content_end > buf->buf_tail)
+				content_end = buf->buf_tail;
 
-				if (!p || p >= tail)
-					break;
+			range = (content_end - left_angle);
+			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 
-				--depth;
-				content_end = p;
-				savep = ++p;
-			}
-
-			savep = search_from;
+			savep = ++content_end;
 		}
-
-		right_angle = memchr(content_end, '>', (tail - content_end));
-
-		if (right_angle)
-			content_end = (right_angle + 1);
-
-		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), (content_end - left_angle));
-		tail = buf->buf_tail;
-		savep = left_angle;
 	}
+
+	out_release_bufs:
+
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return;
+}
+
+void
+html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *value)
+{
+	assert(buf);
+	assert(attribute);
+	assert(value);
+
+	char *p;
+	char *savep;
+	char *left_angle;
+	char *right_angle;
+	char *content_end;
+	char *search_from;
+	size_t alen = strlen(attribute) + 2;
+	size_t range;
+	buf_t open_tag;
+	buf_t close_tag;
+	int depth = 0;
+	int got_tags = 0;
+
+	buf_init(&open_tag, 64);
+	buf_init(&close_tag, 64);
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		while (1)
+		{
+			p = strstr(savep, value);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - alen), attribute, (alen - 2)))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			content_end = strstr(p, close_tag.buf_head);
+
+			if (!content_end || content_end >= buf->buf_tail)
+				goto out_release_bufs;
+
+			search_from = savep = p;
+
+			while (1)
+			{
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
+
+					if (!p || p >= content_end)
+						break;
+
+					++depth;
+					savep = ++p;
+				}
+
+				if (!depth)
+					break;
+
+				search_from = savep = (content_end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					--depth;
+					content_end = p;
+					savep = ++p;
+				}
+
+				savep = search_from;
+			}
+
+			right_angle = memchr(content_end, '>', (buf->buf_tail - content_end));
+
+			if (right_angle)
+				content_end = (right_angle + 1);
+			else
+				content_end += close_tag.data_len;
+
+			if (content_end > buf->buf_tail)
+				content_end = buf->buf_tail;
+
+			range = (content_end - left_angle);
+			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
+
+			savep = ++content_end;
+		}
+	}
+
+	out_release_bufs:
 
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
@@ -635,105 +1125,127 @@ html_remove_elements_id(buf_t *buf, const char *id)
 	assert(id);
 
 	char *p;
-	char *e;
 	char *savep;
-	char *tail;
 	char *left_angle;
 	char *right_angle;
 	char *content_end;
 	char *search_from;
-	int got_tag = 0;
+	size_t ilen = strlen("id=\"");
 	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
-
-	savep = buf->buf_head;
-	tail = buf->buf_tail;
+	int got_tags = 0;
 
 	buf_init(&open_tag, 64);
 	buf_init(&close_tag, 64);
 
+	savep = buf->buf_head;
+
 	while (1)
 	{
-		p = strstr(savep, id);
-
-		if (!p || p >= tail)
-			break;
-
-		if (strncmp("id=", p - strlen("id\""), 3))
-		{
-			savep = ++p;
-			continue;
-		}
-
-		left_angle = p;
-		while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
-			--left_angle;
-
-		if (!got_tag)
-		{
-			e = memchr(left_angle, ' ', (p - left_angle));
-
-			if (!e)
-				break;
-
-			buf_append_ex(&open_tag, left_angle, (e - left_angle));
-			*(open_tag.buf_tail) = 0;
-			buf_append(&close_tag, "</");
-			buf_append_ex(&close_tag, (left_angle + 1), ((e - left_angle) - 1));
-			*(close_tag.buf_tail) = 0;
-
-			got_tag = 1;
-		}
-
-		content_end = strstr(p, close_tag.buf_head);
-		if (!content_end || content_end >= tail)
-			break;
-
-		depth = 0;
-		search_from = savep = p;
-
 		while (1)
 		{
+			p = strstr(savep, id);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - ilen), "id=\"", ilen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			content_end = strstr(p, close_tag.buf_head);
+
+			if (!content_end || content_end >= buf->buf_tail)
+				goto out_release_bufs;
+
+			search_from = savep = p;
+
 			while (1)
 			{
-				p = strstr(savep, open_tag.buf_head);
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
 
-				if (!p || p >= content_end)
+					if (!p || p >= content_end)
+						break;
+
+					++depth;
+					savep = ++p;
+				}
+
+				if (!depth)
 					break;
 
-				++depth;
-				savep = ++p;
+				search_from = savep = (content_end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					--depth;
+					content_end = p;
+					savep = ++p;
+				}
+
+				savep = search_from;
 			}
 
-			if (!depth)
-				break;
+			right_angle = memchr(content_end, '>', (buf->buf_tail - content_end));
 
-			search_from = savep = (content_end + 1);
+			if (right_angle)
+				content_end = (right_angle + 1);
+			else
+				content_end += close_tag.data_len;
 
-			while (depth)
-			{
-				p = strstr(savep, close_tag.buf_head);
+			if (content_end > buf->buf_tail)
+				content_end = buf->buf_tail;
 
-				if (!p || p >= tail)
-					break;
+			range = (content_end - left_angle);
 
-				--depth;
-				content_end = p;
-				savep = ++p;
-			}
+			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 
-			savep = search_from;
+			savep = ++content_end;
 		}
-
-		right_angle = memchr(content_end, '>', (tail - content_end));
-		content_end = (right_angle + 1);
-		range = (content_end - left_angle);
-		buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
-		tail = buf->buf_tail;
-		savep = left_angle;
 	}
+
+	out_release_bufs:
 
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
