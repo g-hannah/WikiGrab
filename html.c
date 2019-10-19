@@ -184,8 +184,6 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	buf_init(&open_tag, 64);
 	buf_init(&close_tag, 64);
 
-	while (1)
-	{
 		while (1)
 		{
 			p = strstr(savep, classname);
@@ -310,7 +308,6 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 
 			savep = ++end;
 		}
-	}
 
 	out_release_bufs:
 	buf_destroy(&open_tag);
@@ -349,8 +346,6 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	buf_init(&open_tag, 64);
 	buf_init(&close_tag, 64);
 
-	while (1)
-	{
 		while (1)
 		{
 			p = strstr(savep, id);
@@ -478,7 +473,6 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 
 			savep = ++end;
 		}
-	}
 
 	out_release_bufs:
 	buf_destroy(&open_tag);
@@ -518,8 +512,6 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	buf_init(&open_tag, 64);
 	buf_init(&close_tag, 64);
 
-	while (1)
-	{
 		while (1)
 		{
 			p = strstr(savep, value);
@@ -647,7 +639,6 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 
 			savep = ++end;
 		}
-	}
 
 	out_release_bufs:
 	buf_destroy(&open_tag);
