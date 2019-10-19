@@ -32,105 +32,107 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 
 	savep = buf->buf_head;
 
-while (1)
-{
-	start = strstr(savep, open_pattern);
-	if (!start || start >= buf->buf_tail)
-		break;
-
-	search_from = savep = (start + 1);
-	end = strstr(search_from, close_pattern);
-	if (!end || end > buf->buf_tail)
-		break;
-	
 	while (1)
 	{
-		depth = 0;
+		start = strstr(savep, open_pattern);
+
+		if (!start || start >= buf->buf_tail)
+			break;
+
+		search_from = savep = (start + 1);
+		end = strstr(search_from, close_pattern);
+
+		if (!end || end > buf->buf_tail)
+			break;
+	
 		while (1)
 		{
-			p = strstr(savep, open_pattern);
-			if (!p || p >= end)
+			depth = 0;
+			while (1)
+			{
+				p = strstr(savep, open_pattern);
+				if (!p || p >= end)
+					break;
+
+				++depth;
+				savep = ++p;
+				if (p >= end)
+					break;
+			}
+
+			if (!depth)
 				break;
 
-			++depth;
-			savep = ++p;
-			if (p >= end)
-				break;
-		}
+			search_from = savep = (end + 1);
 
-		if (!depth)
-			break;
+			if (search_from >= buf->buf_tail)
+			{
+				goto done;
+			}
 
-		search_from = savep = (end + 1);
-
-		if (search_from >= buf->buf_tail)
-		{
-			goto done;
-		}
-
-		while (depth)
-		{
-			p = strstr(savep, close_pattern);
+			while (depth)
+			{
+				p = strstr(savep, close_pattern);
 	
-			if (!p || p >= buf->buf_tail)
+				if (!p || p >= buf->buf_tail)
+					break;
+
+				--depth;
+				end = p;
+				savep = ++p;
+
+				if (p >= buf->buf_tail)
+					break;
+			}
+		}
+
+		if (end)
+		{
+			p = memchr(end, '>', (buf->buf_tail - end));
+			if (p)
+			{
+				end = ++p;
+			}
+			else
+			{
+				end += strlen(close_pattern);
+			}
+
+			if (end > buf->buf_tail)
+				end = buf->buf_tail;
+
+			content = wiki_cache_alloc(cachep, &content);
+
+			if (!content)
 				break;
 
-			--depth;
-			end = p;
-			savep = ++p;
-			if (p >= buf->buf_tail)
-				break;
+			len = (end - start);
+
+			assert(len < buf->data_len);
+			assert(len >= 0);
+
+			if (len >= content->alloc_len)
+			{
+				content->data = realloc(content->data, __ALIGN(len+1));
+				if (!content->data)
+					goto fail;
+				content->alloc_len = __ALIGN(len+1);
+			}
+
+			assert(len <= content->alloc_len);
+			assert(len < buf->data_len);
+			memcpy((void *)content->data, (void *)start, len);
+			content->data[len] = 0;
+			content->data_len = len;
+			content->off = (off_t)(start - buf->buf_head);
+			assert(content->off < buf->data_len);
+
+			savep = end;
+
+			//mark_start(start);
+			//mark_end(end);
 		}
 	}
-
-	if (end)
-	{
-		p = memchr(end, '>', (buf->buf_tail - end));
-		if (p)
-		{
-			end = ++p;
-		}
-		else
-		{
-			end += strlen(close_pattern);
-		}
-
-		if (end > buf->buf_tail)
-			end = buf->buf_tail;
-
-
-		content = wiki_cache_alloc(cachep, &content);
-
-		if (!content)
-			break;
-
-		len = (end - start);
-
-		assert(len < buf->data_len);
-		assert(len >= 0);
-
-		if (len >= content->alloc_len)
-		{
-			content->data = realloc(content->data, __ALIGN(len+1));
-			if (!content->data)
-				goto fail;
-			content->alloc_len = __ALIGN(len+1);
-		}
-
-		assert(len <= content->alloc_len);
-		assert(len < buf->data_len);
-		memcpy((void *)content->data, (void *)start, len);
-		content->data[len] = 0;
-		content->data_len = len;
-		content->off = (off_t)(start - buf->buf_head);
-		assert(content->off < buf->data_len);
-
-		savep = end;
-
-		//mark_start(start);
-		//mark_end(end);
-	}
-}
 
 	done:
 
@@ -155,6 +157,173 @@ while (1)
 	return 0;
 
 	fail:
+	return -1;
+}
+
+int
+html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
+{
+	assert(cachep);
+	assert(buf);
+	assert(classname);
+
+	char *p;
+	char *savep;
+	char *left_angle;
+	char *right_angle;
+	char *end;
+	char *search_from;
+	size_t clen = strlen("class=\"");
+	buf_t open_tag;
+	buf_t close_tag;
+	int got_tags = 0;
+	int depth = 0;
+	size_t len;
+
+	savep = buf->buf_head;
+	buf_init(&open_tag, 64);
+	buf_init(&close_tag, 64);
+
+	while (1)
+	{
+		while (1)
+		{
+			p = strstr(savep, classname);
+
+			if (!p || p >= buf->buf_tail)
+				goto out_release_bufs;
+
+			if (memcmp((p - clen), "class=\"", clen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			left_angle = p;
+			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
+				--left_angle;
+
+			if (*left_angle != '<')
+			{
+				savep = ++p;
+				continue;
+			}
+
+			if (!got_tags)
+			{
+				char *sp = memchr(left_angle, ' ', (p - left_angle));
+
+				if (!sp)
+				{
+					savep = ++p;
+					continue;
+				}
+
+				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+				*(open_tag.buf_tail) = 0;
+
+				buf_append(&close_tag, "</");
+				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+				*(close_tag.buf_tail) = 0;
+
+				got_tags = 1;
+			}
+
+			end = strstr(p, close_tag.buf_head);
+
+			if (!end)
+				goto out_release_bufs;
+
+			search_from = savep = (left_angle + 1);
+
+			while (1)
+			{
+				depth = 0;
+				while (1)
+				{
+					p = strstr(savep, open_tag.buf_head);
+					if (!p || p >= end)
+						break;
+
+					savep = ++p;
+					++depth;
+				}
+
+				if (!depth)
+					break;
+
+				search_from = savep = (end + 1);
+
+				while (depth)
+				{
+					p = strstr(savep, close_tag.buf_head);
+
+					if (!p || p >= buf->buf_tail)
+						break;
+
+					end = p;
+					savep = ++p;
+					--depth;
+				}
+
+				savep = search_from;
+			}
+
+			right_angle = memchr(end, '>', (buf->buf_tail - end));
+			if (right_angle)
+			{
+				end = (right_angle + 1);
+			}
+			else
+			{
+				end += close_tag.data_len;
+			}
+
+			if (end > buf->buf_tail)
+				end = buf->buf_tail;
+
+			content = wiki_cache_alloc(cachep, &content);
+
+			if (!content)
+				goto fail_release_bufs;
+
+			len = (end - left_angle);
+			if (len >= content->alloc_len)
+			{
+				size_t new_len = __ALIGN(len+1);
+				content->data = realloc(content->data, new_len);
+				if (!content->data)
+					goto fail_release_bufs;
+
+				content->alloc_len = new_len;
+			}
+
+			assert(len < content->alloc_len);
+			memcpy((void *)content->data, (void *)left_angle, len);
+			content->data[len] = 0;
+			content->data_len = len;
+			content->off = (off_t)(left_angle - buf->buf_head);
+
+			fprintf(stderr, "content of class \"%s\"\n\n%s\n\n", classname, content->data);
+
+			assert(content->off < buf->data_len);
+			assert(content->data_len < buf->data_len);
+			assert(content->data_len < content->alloc_len);
+
+			savep = ++end;
+		}
+	}
+
+	out_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
 	return -1;
 }
 
