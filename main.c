@@ -35,7 +35,6 @@ __noret usage(int status)
 			"-Q              show HTTP request header(s)\n"
 			"-S              show HTTP response headers(s)\n"
 			"--open/-O       open article in text editor when done\n"
-			"--TLS/-T        use a secure TLS connection\n"
 			"--txt           format article in plain text file (default)\n"
 			"--xml           format article in XML\n"
 			"--print/-P      print the parsed article to stdout\n"
@@ -93,12 +92,6 @@ get_runtime_options(int argc, char *argv[])
 			set_option(OPT_RES_HEADER);
 		}
 		else
-		if (!strcmp("--TLS", argv[i])
-		|| !strcmp("-T", argv[i]))
-		{
-			set_option(OPT_USE_TLS);
-		}
-		else
 		if (!strcmp("--print", argv[i])
 		|| !strcmp("-P", argv[i]))
 		{
@@ -115,16 +108,21 @@ get_runtime_options(int argc, char *argv[])
 	 */
 	if (!option_set(OPT_FORMAT_TXT|OPT_FORMAT_XML))
 		set_option(OPT_FORMAT_TXT);
+
+	set_option(OPT_USE_TLS);
 }
 
-static void
+static int
 check_wikigrab_dir(void)
 {
 	char *home;
 	buf_t tmp_buf;
 
 	home = getenv("HOME");
-	buf_init(&tmp_buf, pathconf("/", _PC_PATH_MAX));
+
+	if (buf_init(&tmp_buf, pathconf("/", _PC_PATH_MAX)) < 0)
+		goto fail;
+		
 	buf_append(&tmp_buf, home);
 	buf_append(&tmp_buf, WIKIGRAB_DIR);
 
@@ -134,7 +132,10 @@ check_wikigrab_dir(void)
 	}
 
 	buf_destroy(&tmp_buf);
-	return;
+	return 0;
+
+	fail:
+	return -1;
 }
 
 int
@@ -158,6 +159,7 @@ main(int argc, char *argv[])
 		usage(EXIT_FAILURE);
 	}
 
+#if 0
 	printf(
 		"________________________________________\n"
 		"\n"
@@ -166,11 +168,13 @@ main(int argc, char *argv[])
 		" Written by Gary Hannah\n"
 		"________________________________________\n\n",
 		WIKIGRAB_BUILD);
+#endif
 
-	check_wikigrab_dir();
+	if (check_wikigrab_dir() < 0)
+		goto fail;
 
 	connection_t conn;
-	buf_t read_copy;
+	//buf_t read_copy;
 	http_header_t *location;
 	off_t off;
 	int status_code;
@@ -185,15 +189,32 @@ main(int argc, char *argv[])
 				wiki_cache_http_cookie_dtor);
 
 	atexit(cache_cleanup);
-
 	clear_struct(&conn);
-
 	host_max = sysconf(_SC_HOST_NAME_MAX);
-	conn.host = calloc(host_max, 1);
-	conn.page = calloc(host_max, 1);
 
-	http_parse_host(argv[1], conn.host);
-	http_parse_page(argv[1], conn.page);
+	if (!(conn.host = calloc(host_max, 1)))
+	{
+		fprintf(stderr, "main: calloc error (%s)\n", strerror(errno));
+		goto fail;
+	}
+
+	if (!(conn.page = calloc(host_max, 1)))
+	{
+		fprintf(stderr, "main: calloc error (%s)\n", strerror(errno));
+		goto fail;
+	}
+
+	if (!(http_parse_host(argv[1], conn.host)))
+	{
+		fprintf(stderr, "main: failed to parse host from URL\n");
+		goto fail;
+	}
+
+	if (!(http_parse_page(argv[1], conn.page)))
+	{
+		fprintf(stderr, "main: failed to parse page from URL\n");
+		goto fail;
+	}
 
 	if (open_connection(&conn) < 0)
 		goto fail;
@@ -201,7 +222,11 @@ main(int argc, char *argv[])
 	again:
 	buf_clear(&conn.write_buf);
 
-	http_build_request_header(&conn, HTTP_GET, conn.page);
+	if (http_build_request_header(&conn, HTTP_GET, conn.page) < 0)
+	{
+		fprintf(stderr, "main: http_build_get_request_header error\n");
+		goto fail_disconnect;
+	}
 
 	if (http_check_header(&conn.read_buf, "Set-Cookie", (off_t)0, &off))
 	{
@@ -211,8 +236,18 @@ main(int argc, char *argv[])
 		while (http_check_header(&conn.read_buf, "Set-Cookie", off, &off))
 		{
 			cookie = (http_header_t *)wiki_cache_alloc(http_hcache, &cookie);
-			http_fetch_header(&conn.read_buf, "Set-Cookie", cookie, off);
-			http_append_header(&conn.write_buf, cookie);
+			if (!(http_fetch_header(&conn.read_buf, "Set-Cookie", cookie, off)))
+			{
+				fprintf(stderr, "main: http_fetch_header error\n");
+				goto fail_disconnect;
+			}
+
+			if (http_append_header(&conn.write_buf, cookie) < 0)
+			{
+				fprintf(stderr, "main: http_append_header error\n");
+				goto fail_disconnect;
+			}
+
 			++off;
 		}
 	}
@@ -220,7 +255,7 @@ main(int argc, char *argv[])
 	buf_clear(&conn.read_buf);
 
 	if (option_set(OPT_REQ_HEADER))
-		printf("%s", conn.write_buf.buf_head);
+		fprintf(stdout, "%s", conn.write_buf.buf_head);
 
 	if (http_send_request(&conn) < 0)
 		goto fail_disconnect;
@@ -229,7 +264,7 @@ main(int argc, char *argv[])
 		goto fail_disconnect;
 
 	if (option_set(OPT_RES_HEADER))
-		printf("%.*s", (int)http_response_header_len(&conn.read_buf), conn.read_buf.buf_head);
+		fprintf(stdout, "%.*s", (int)http_response_header_len(&conn.read_buf), conn.read_buf.buf_head);
 
 	status_code = http_status_code_int(&conn.read_buf);
 
@@ -246,12 +281,26 @@ main(int argc, char *argv[])
 		case HTTP_MOVED_PERMANENTLY:
 			location = wiki_cache_alloc(http_hcache, &location);
 			assert(wiki_cache_obj_used(http_hcache, (void *)location));
-			http_fetch_header(&conn.read_buf, "Location", location, (off_t)0);
+
+			if (!(http_fetch_header(&conn.read_buf, "Location", location, (off_t)0)))
+			{	
+				fprintf(stderr, "main: http_fetch_header error\n");
+				goto fail_disconnect;
+			}
+
 			strncpy(conn.page, location->value, location->vlen);
 			conn.page[location->vlen] = 0;
-			http_parse_host(location->value, conn.host);
+			if (!(http_parse_host(location->value, conn.host)))
+			{
+				fprintf(stderr, "main: failed to parse host from URL\n");
+				goto fail_disconnect;
+			}
 
-			if (!strncmp("https", location->value, 5))
+#if 0
+/*
+ * Default is now to always use TLS
+ */
+			if (!strncmp("https", location->value, 5) && !option_set(OPT_USE_TLS))
 			{
 				buf_init(&read_copy, conn.read_buf.buf_size);
 				buf_copy(&read_copy, &conn.read_buf);
@@ -261,12 +310,13 @@ main(int argc, char *argv[])
 				buf_copy(&conn.read_buf, &read_copy);
 				buf_destroy(&read_copy);
 			}
+#endif
 
 			buf_clear(&conn.write_buf);
 			wiki_cache_dealloc(http_hcache, (void *)location, &location);
 			goto again;
 		default:
-			printf("%d -- %s\n", status_code, http_status_code_string(status_code));
+			fprintf(stderr, "Error (HTTP status code: %d -- %s)\n", status_code, http_status_code_string(status_code));
 			goto fail_disconnect;
 	}
 
@@ -276,10 +326,16 @@ main(int argc, char *argv[])
 	exit(EXIT_SUCCESS);
 
 	fail_disconnect:
+	fprintf(stderr, "Disconnecting from remote server\n");
 	free(conn.host);
 	free(conn.page);
 	close_connection(&conn);
 
 	fail:
+	if (conn.host)
+		free(conn.host);
+	if (conn.page)
+		free(conn.page);
+
 	exit(EXIT_FAILURE);
 }
