@@ -26,8 +26,8 @@ void buf_destroy(buf_t *) __nonnull((1));
 void buf_collapse(buf_t *, off_t, size_t) __nonnull((1));
 void buf_shift(buf_t *, off_t, size_t) __nonnull((1));
 int buf_extend(buf_t *, size_t) __nonnull((1));
-int buf_append(buf_t *, char *) __nonnull((1,2));
-int buf_append_ex(buf_t *, char *, size_t) __nonnull((1,2));
+void buf_append(buf_t *, char *) __nonnull((1,2));
+void buf_append_ex(buf_t *, char *, size_t) __nonnull((1,2));
 void buf_replace(buf_t *, char *, char *) __nonnull((1,2,3));
 void buf_snip(buf_t *, size_t) __nonnull((1));
 void buf_clear(buf_t *) __nonnull((1));
@@ -42,6 +42,5 @@ ssize_t buf_read_tls(SSL *, buf_t *, size_t) __nonnull((1,2));
 ssize_t buf_write_fd(int, buf_t *) __nonnull((2));
 ssize_t buf_write_socket(int, buf_t *) __nonnull((2));
 ssize_t buf_write_tls(SSL *, buf_t *) __nonnull((1,2));
-int toggle_buffer_size(buf_t *, size_t) __nonnull((1));
 
 #endif /* !defined BUFFER_H */

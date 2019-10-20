@@ -164,7 +164,7 @@ buf_clear(buf_t *buf)
 	buf->data_len = 0;
 }
 
-int
+void
 buf_append(buf_t *buf, char *str)
 {
 	size_t len = strlen(str);
@@ -179,14 +179,14 @@ buf_append(buf_t *buf, char *str)
 	
 	__buf_pull_tail(buf, len);
 
-	return 0;
+	return;
 }
 
-int
+void
 buf_append_ex(buf_t *buf, char *str, size_t bytes)
 {
 	if (strlen(str) < bytes)
-		return -1;
+		return;
 
 	size_t slack = buf_slack(buf);
 
@@ -197,7 +197,7 @@ buf_append_ex(buf_t *buf, char *str, size_t bytes)
 
 	__buf_pull_tail(buf, bytes);
 
-	return 0;
+	return;
 }
 
 void
