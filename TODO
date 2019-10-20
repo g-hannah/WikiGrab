@@ -3,3 +3,5 @@ Format matrices in txt file format from TEX
 Make list items more clear (i.e., " * content ...")
 
 Do not re-format content in <pre></pre> tags because it heavily decreases readability of, for example, source code examples.
+
+Check for bytes outwith the ASCII range, and add one byte of length for every pair in order that such a line is correctly justified.
