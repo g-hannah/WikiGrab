@@ -35,6 +35,9 @@ nested_closing_char(char *whence, char *limit, char o, char c)
 	{
 		savep = search_from;
 
+		if (savep >= limit)
+			break;
+
 		while (1)
 		{
 			cur_pos = memchr(savep, o, (final - savep));
@@ -45,9 +48,12 @@ nested_closing_char(char *whence, char *limit, char o, char c)
 			++depth;
 
 			if (cur_pos >= final)
-				savep = cur_pos;
+				break;
 			else
 				savep = (cur_pos + 1);
+
+			if (savep >= final)
+				break;
 		}
 
 		if (!depth)
@@ -67,9 +73,14 @@ nested_closing_char(char *whence, char *limit, char o, char c)
 
 			final = cur_pos;
 			savep = (final + 1);
+
+			if (savep >= limit)
+				break;
 		}
 
 		depth = 0;
+		if (savep >= limit)
+			break;
 	}
 
 	assert(final);
