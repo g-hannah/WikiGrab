@@ -966,6 +966,7 @@ parse_maths_expressions(buf_t *buf)
 	size_t elen;
 	size_t tlen;
 	off_t sp_off;
+	off_t off;
 
 	savep = buf->buf_head;
 
@@ -986,7 +987,7 @@ parse_maths_expressions(buf_t *buf)
 
 		elen = (exp_end - exp_start);
 
-		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
+		buf_append_ex(&tmp, exp_start+1, ((exp_end - exp_start) - 1));
 		*(tmp.buf_tail) = 0;
 
 		if (tex_replace_symbols(&tmp) < 0)
@@ -998,7 +999,7 @@ parse_maths_expressions(buf_t *buf)
 		tlen = tmp.data_len;
 		if (elen > tlen)
 		{
-			strncpy(exp_start, tmp.buf_head, tlen);
+			memcpy(exp_start, tmp.buf_head, tlen);
 			exp_start += tlen;
 			buf_collapse(buf, (off_t)(exp_start - buf->buf_head), (elen - tlen));
 			tail = buf->buf_tail;
@@ -1006,12 +1007,13 @@ parse_maths_expressions(buf_t *buf)
 		else
 		{
 			sp_off = (off_t)(savep - buf->buf_head);
-			buf_shift(buf, (off_t)(exp_start - buf->buf_head), (tlen - elen));
-			savep = (buf->buf_head + sp_off);
-			exp_start = savep;
-			tail = buf->buf_tail;
-			strncpy(exp_start, tmp.buf_head, tlen);
+			off = (off_t)(exp_start - buf->buf_head);
+			buf_shift(buf, off, (tlen - elen));
+			exp_start = (buf->buf_head + off);
+			memcpy(exp_start, tmp.buf_head, tlen);
 			exp_start += tlen;
+			savep = (buf->buf_head + sp_off);
+			tail = buf->buf_tail;
 		}
 
 		savep = exp_start;
