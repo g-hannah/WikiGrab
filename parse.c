@@ -989,8 +989,11 @@ parse_maths_expressions(buf_t *buf)
 		buf_append_ex(&tmp, exp_start, (exp_end - exp_start));
 		*(tmp.buf_tail) = 0;
 
-		tex_replace_symbols(&tmp);
-		tex_replace_fractions(&tmp);
+		if (tex_replace_symbols(&tmp) < 0)
+		{
+			fprintf(stderr, "parse_maths_expressions: tex_replace_symbols error\n");
+			goto fail;
+		}
 
 		tlen = tmp.data_len;
 		if (elen > tlen)
