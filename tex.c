@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,16 +123,17 @@ tex_boldsymbol(buf_t *buf)
 			break;
 
 		symbol_end = memchr(symbol_start, '}', (buf->buf_tail - symbol_start));
+
+		if (!symbol_end)
+			break;
+
+		if (isspace(*(symbol_end - 1)))
+			--symbol_end;
+
 		++symbol_start;
 
 		buf_append_ex(&tmp, symbol_start, (symbol_end - symbol_start));
 		*(tmp.buf_tail) = 0;
-
-		while (*p != '{' && p > (buf->buf_head + 1))
-			--p;
-
-		if (*p != '{')
-			break;
 
 		while (*p != '{' && p > (buf->buf_head + 1))
 			--p;
@@ -154,7 +156,7 @@ tex_boldsymbol(buf_t *buf)
 		p = (buf->buf_head + off);
 		memcpy(p, tmp.buf_head, tmp.data_len);
 
-		savep = p;
+		savep = ++p;
 		buf_clear(&tmp);
 	}
 
@@ -191,8 +193,8 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\theta", "θ");
 	buf_replace(buf, "\\omega", "ω");
 	buf_replace(buf, "\\Omega", "Ω");
-	buf_replace(buf, "\\times", "×");
-	buf_replace(buf, "\\cong", "≅");
+	buf_replace(buf, "\\times", " ×");
+	buf_replace(buf, "\\cong", " ≅");
 	buf_replace(buf, "\\cos", "cos");
 	buf_replace(buf, "\\sin", "sin");
 	buf_replace(buf, "\\tan", "tan");
