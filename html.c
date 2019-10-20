@@ -187,8 +187,11 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	size_t len;
 
 	savep = buf->buf_head;
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 		while (1)
 		{
@@ -325,6 +328,7 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
+	fail:
 	return -1;
 }
 
@@ -349,8 +353,11 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	size_t len;
 
 	savep = buf->buf_head;
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 		while (1)
 		{
@@ -490,6 +497,7 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
+	fail:
 	return -1;
 }
 
@@ -515,8 +523,11 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	size_t len;
 
 	savep = buf->buf_head;
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 		while (1)
 		{
@@ -656,6 +667,7 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
+	fail:
 	return -1;
 }
 
@@ -841,7 +853,7 @@ html_remove_content(buf_t *buf, char *open_tag, char *close_tag)
  * @buf: the buffer holding the HTML data
  * @class: the classname to search for
  */
-void
+int
 html_remove_elements_class(buf_t *buf, const char *classname)
 {
 	assert(buf);
@@ -860,8 +872,11 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	int depth = 0;
 	int got_tags = 0;
 
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 	savep = buf->buf_head;
 
@@ -967,14 +982,20 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	}
 
 	out_release_bufs:
-
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return;
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	fail:
+	return -1;
 }
 
-void
+int
 html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *value)
 {
 	assert(buf);
@@ -994,8 +1015,11 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 	int depth = 0;
 	int got_tags = 0;
 
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 	savep = buf->buf_head;
 
@@ -1102,11 +1126,17 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 	}
 
 	out_release_bufs:
-
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return;
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	fail:
+	return -1;
 }
 
 /**
@@ -1114,7 +1144,7 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
  * @buf: the buffer with the HTML data
  * @id: the id to search for
  */
-void
+int
 html_remove_elements_id(buf_t *buf, const char *id)
 {
 	assert(buf);
@@ -1133,8 +1163,11 @@ html_remove_elements_id(buf_t *buf, const char *id)
 	int depth = 0;
 	int got_tags = 0;
 
-	buf_init(&open_tag, 64);
-	buf_init(&close_tag, 64);
+	if (buf_init(&open_tag, 64) < 0)
+		goto fail;
+
+	if (buf_init(&close_tag, 64) < 0)
+		goto fail_release_bufs;
 
 	savep = buf->buf_head;
 
@@ -1242,9 +1275,16 @@ html_remove_elements_id(buf_t *buf, const char *id)
 	}
 
 	out_release_bufs:
-
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return;
+	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&open_tag);
+	buf_destroy(&close_tag);
+
+	fail:
+	return -1;
+	
 }
