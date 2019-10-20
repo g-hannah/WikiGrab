@@ -1,2 +1,5 @@
 Format matrices in txt file format from TEX
 
+Make list items more clear (i.e., " * content ...")
+
+Do not re-format content in <pre></pre> tags because it heavily decreases readability of, for example, source code examples.
