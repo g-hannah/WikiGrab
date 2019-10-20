@@ -61,7 +61,7 @@ content_cache_dtor(void *obj)
 	content_t *content = (content_t *)obj;
 
 #ifdef DEBUG
-	fprintf(stderr
+	fprintf(stderr,
 		"freeing content_t object:\n"
 		"ptr: %p\n"
 		"data: %s\n"
@@ -1301,7 +1301,6 @@ extract_wiki_article(buf_t *buf)
 /* Stuff we want */
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
 		goto out_destroy_file;
-
 
 	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
 		goto out_destroy_file;
