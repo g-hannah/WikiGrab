@@ -112,6 +112,9 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\phi", "Φ");
 	buf_replace(buf, "\\varphi", "φ");
 	buf_replace(buf, "\\theta", "θ");
+	buf_replace(buf, "\\omega", "ω");
+	buf_replace(buf, "\\Omega", "Ω");
+	buf_replace(buf, "\\times", "×");
 	buf_replace(buf, "\\cong", "≅");
 	buf_replace(buf, "\\cos", "cos");
 	buf_replace(buf, "\\sin", "sin");
@@ -134,6 +137,8 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\end{pmatrix}", "");
 	buf_replace(buf, "\\\\", "\n");
 	buf_replace(buf, "&=", "=");
+	buf_replace(buf, "\\left", "");
+	buf_replace(buf, "\\right", "");
 
 	tex_replace_fractions(buf);
 
