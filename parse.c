@@ -394,6 +394,22 @@ do {\
 } while(0)
 
 static int
+__count_non_ascii(char *data, char *end)
+{
+	char *p = data;
+	int count = 0;
+
+	while (p < end)
+	{
+		if (!isascii(*p))
+			++count;
+		++p;
+	}
+
+	return count;
+}
+
+static int
 __do_format_txt(buf_t *buf)
 {
 	assert(buf);
@@ -412,6 +428,7 @@ __do_format_txt(buf_t *buf)
 	int passes;
 	int remainder;
 	int volte_face = 0;
+	int nr_nascii;
 	size_t ulist_start_len = strlen(BEGIN_ULIST_MARK);
 	size_t ulist_end_len = strlen(END_ULIST_MARK);
 	size_t list_start_len = strlen(BEGIN_LIST_MARK);
@@ -596,6 +613,10 @@ __do_format_txt(buf_t *buf)
 			line_end = new_line = tail;
 
 		line_len = (new_line - line_start);
+		nr_nascii = __count_non_ascii(line_start, new_line);
+		if (nr_nascii > 0)
+			line_len -= (nr_nascii >> 1);
+
 		delta = (WIKI_ARTICLE_LINE_LENGTH - line_len);
 
 		/*
@@ -1205,6 +1226,8 @@ extract_wiki_article(buf_t *buf)
  * BEGIN PARSING THE TEXT FROM THE ARTICLE.
  */
 
+	fprintf(stdout, "Formatting text\n");
+
 	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
 
@@ -1332,7 +1355,6 @@ extract_wiki_article(buf_t *buf)
 	remove_excess_nl(&content_buf);
 	remove_excess_sp(&content_buf);
 
-	fprintf(stdout, "Formatting text\n");
 
 	if (option_set(OPT_FORMAT_XML))
 	{
