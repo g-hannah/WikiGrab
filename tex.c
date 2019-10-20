@@ -8,7 +8,7 @@
 #include "utils.h"
 #include "wikigrab.h"
 
-void
+static int
 tex_replace_fractions(buf_t *buf)
 {
 	assert(buf);
@@ -22,7 +22,8 @@ tex_replace_fractions(buf_t *buf)
 	buf_t tmp;
 	size_t range;
 
-	buf_init(&tmp, 128);
+	if (buf_init(&tmp, 128) < 0)
+		goto fail;
 
 	frac_end = frac_start = buf->buf_head;
 
@@ -79,16 +80,92 @@ tex_replace_fractions(buf_t *buf)
 		buf_append(&tmp, "/");
 		buf_append(&tmp, denom);
 		buf_append(&tmp, " ");
-		strncpy(frac_start, tmp.buf_head, tmp.data_len);
+		memcpy(frac_start, tmp.buf_head, tmp.data_len);
 
 		buf_clear(&tmp);
 	}
 
 	buf_destroy(&tmp);
-	return;
+	return 0;
+
+	fail:
+	return -1;
 }
 
-void
+static int
+tex_boldsymbol(buf_t *buf)
+{
+	assert(buf);
+
+	buf_t tmp;
+	char *p;
+	char *savep;
+	char *end_brace;
+	char *symbol_start;
+	char *symbol_end;
+	off_t off;
+
+	if (buf_init(&tmp, 256) < 0)
+		goto fail;
+
+	savep = buf->buf_head;
+
+	while (1)
+	{
+		p = strstr(savep, "\\boldsymbol");
+
+		if (!p || p >= buf->buf_tail)
+			break;
+
+		symbol_start = memchr(p, '{', (buf->buf_tail - p));
+		if (!symbol_start)
+			break;
+
+		symbol_end = memchr(symbol_start, '}', (buf->buf_tail - symbol_start));
+		++symbol_start;
+
+		buf_append_ex(&tmp, symbol_start, (symbol_end - symbol_start));
+		*(tmp.buf_tail) = 0;
+
+		while (*p != '{' && p > (buf->buf_head + 1))
+			--p;
+
+		if (*p != '{')
+			break;
+
+		while (*p != '{' && p > (buf->buf_head + 1))
+			--p;
+
+		if (*p != '{')
+			break;
+
+		end_brace = nested_closing_char((p+1), buf->buf_tail, '{', '}');
+
+		if (!end_brace)
+			break;
+
+		++end_brace;
+		if (end_brace > buf->buf_tail)
+			end_brace = buf->buf_tail;
+
+		off = (off_t)(p - buf->buf_head);
+		buf_collapse(buf, off, (end_brace - p));
+		buf_shift(buf, off, tmp.data_len);
+		p = (buf->buf_head + off);
+		memcpy(p, tmp.buf_head, tmp.data_len);
+
+		savep = p;
+		buf_clear(&tmp);
+	}
+
+	buf_destroy(&tmp);
+	return 0;
+
+	fail:
+	return -1;
+}
+
+int
 tex_replace_symbols(buf_t *buf)
 {
 	assert(buf);
@@ -140,7 +217,14 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\left", "");
 	buf_replace(buf, "\\right", "");
 
-	tex_replace_fractions(buf);
+	if (tex_replace_fractions(buf) < 0)
+		goto fail;
 
-	return;
+	if (tex_boldsymbol(buf) < 0)
+		goto fail;
+
+	return 0;
+
+	fail:
+	return -1;
 }
