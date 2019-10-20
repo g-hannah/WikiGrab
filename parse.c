@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <stdint.h>
@@ -778,8 +779,11 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
  *
  */
 
-	buf_init(&tmp_buf, DEFAULT_TMP_BUF_SIZE);
-	buf_init(&first_part, 32);
+	if (buf_init(&tmp_buf, DEFAULT_TMP_BUF_SIZE) < 0)
+		goto fail;
+
+	if (buf_init(&first_part, 32) < 0)
+		goto fail_release_bufs;
 
 	p = open_pattern;
 	op_len = strlen(open_pattern);
@@ -875,9 +879,11 @@ __extract_area(buf_t *sbuf, buf_t *dbuf, char *const open_pattern, char *const c
 	buf_destroy(&first_part);
 	return 0;
 
-	fail:
+	fail_release_bufs:
 	buf_destroy(&tmp_buf);
 	buf_destroy(&first_part);
+
+	fail:
 	return -1;
 }
 
@@ -941,7 +947,9 @@ parse_maths_expressions(buf_t *buf)
 	off_t sp_off;
 
 	savep = buf->buf_head;
-	buf_init(&tmp, 1024);
+
+	if (buf_init(&tmp, 1024) < 0)
+		goto fail;
 
 	while (1)
 	{
@@ -988,6 +996,9 @@ parse_maths_expressions(buf_t *buf)
 
 	buf_destroy(&tmp);
 	return 0;
+
+	fail:
+	return -1;
 }
 
 int
@@ -1008,6 +1019,7 @@ extract_wiki_article(buf_t *buf)
 	struct addrinfo *aip = NULL;
 	int gotv4 = 0;
 	int gotv6 = 0;
+	int i;
 	wiki_cache_t *value_cache = NULL;
 	wiki_cache_t *content_cache = NULL;
 	struct article_header article_header;
@@ -1090,8 +1102,11 @@ extract_wiki_article(buf_t *buf)
 	wiki_cache_dealloc(http_hcache, (void *)date, &date);
 	wiki_cache_dealloc(http_hcache, (void *)lastmod, &lastmod);
 
-	buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE);
-	buf_init(&file_title, pathconf("/", _PC_PATH_MAX));
+	if (buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE) < 0)
+		goto fail_release_mem;
+
+	if (buf_init(&file_title, pathconf("/", _PC_PATH_MAX)) < 0)
+		goto fail_release_mem;
 
 	home = getenv("HOME");
 	buf_append(&file_title, home);
@@ -1136,7 +1151,7 @@ extract_wiki_article(buf_t *buf)
 	article_header.generator->vlen = len;
 
 	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
-		goto out_destroy_bufs;
+		goto fail_release_mem;
 
 	fprintf(stdout, "Created file \"%s\"\n", file_title.buf_head);
 
@@ -1189,6 +1204,49 @@ extract_wiki_article(buf_t *buf)
 		goto out_destroy_file;
 
 /* Stuff we do not want */
+	const char *const unwanted_class[] =
+	{
+		"box-Multiple_issues",
+		"mw-references-wrap",
+		"toc",
+		"mw-empty-elt",
+		"mw-editsection",
+		"citation",
+		"infobox",
+		"navbox",
+		"box-Cleanup",
+		"box-Expand_language",
+		"hatnote",
+		"vertical-navbox",
+		"gallery",
+		NULL
+	};
+
+	const char *const unwanted_id[] =
+	{
+		"cite_note-FOOTNOTE",
+		"See_also",
+		"Notes",
+		"References",
+		"External_links",
+		NULL
+	};
+
+	for (i = 0; unwanted_class[i] != NULL; ++i)
+	{
+		if (html_remove_elements_class(&content_buf, unwanted_class[i]) < 0)
+			goto out_destroy_file;
+	}
+
+	for (i = 0; unwanted_id[i] != NULL; ++i)
+	{
+		if (html_remove_elements_id(&content_buf, unwanted_id[i]) < 0)
+			goto out_destroy_file;
+	}
+
+	html_remove_content(&content_buf, "<style", "</style");
+
+#if 0
 	html_remove_elements_class(&content_buf, "box-Multiple_issues");
 	html_remove_elements_class(&content_buf, "mw-references-wrap");
 	html_remove_elements_class(&content_buf, "toc");
@@ -1207,7 +1265,7 @@ extract_wiki_article(buf_t *buf)
 	html_remove_elements_id(&content_buf, "Notes");
 	html_remove_elements_id(&content_buf, "References");
 	html_remove_elements_id(&content_buf, "External_links");
-	html_remove_content(&content_buf, "<style", "</style");
+#endif
 
 /* Stuff we want */
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
@@ -1249,7 +1307,6 @@ extract_wiki_article(buf_t *buf)
 				content_cache->objsize,
 				sort_content_cache);
 
-	int i;
 	int nr_used = wiki_cache_nr_used(content_cache);
 	content_t *cp = (content_t *)content_cache->cache;
 	buf_clear(&content_buf);
@@ -1351,7 +1408,13 @@ extract_wiki_article(buf_t *buf)
 		buf_snip(&content_buf, (content_buf.buf_tail - t));
 	}
 
-	write(out_fd, buffer, strlen(buffer)); /* Our article header */
+	size_t buf_len = strlen(buffer);
+	if (write(out_fd, buffer, buf_len) != buf_len) /* Our article header */
+	{
+		fprintf(stderr, "extract_wiki_article: failed to write to file (%s)\n", strerror(errno));
+		goto out_destroy_file;
+	}
+
 	buf_write_fd(out_fd, &content_buf); /* The article */
 	close(out_fd);
 	out_fd = -1;
@@ -1382,8 +1445,7 @@ extract_wiki_article(buf_t *buf)
 		;
 	unlink(file_title.buf_head);
 
-	out_destroy_bufs:
-
+	fail_release_mem:
 	buf_destroy(&content_buf);
 	buf_destroy(&file_title);
 
