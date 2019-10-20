@@ -193,6 +193,7 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\theta", "θ");
 	buf_replace(buf, "\\omega", "ω");
 	buf_replace(buf, "\\Omega", "Ω");
+	buf_replace(buf, "\\chi", "Χ");
 	buf_replace(buf, "\\times", " ×");
 	buf_replace(buf, "\\cong", " ≅");
 	buf_replace(buf, "\\cos", "cos");
