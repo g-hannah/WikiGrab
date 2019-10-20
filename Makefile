@@ -25,9 +25,9 @@ wikigrab: $(OBJ_FILES) $(DEP_FILES)
 
 $(OBJ_FILES): $(SOURCE_FILES) $(DEP_FILES)
 ifeq ($(DEBUG),1)
-	$(CC) $(CFLAGS) -g -DDEBUG -c $^
+	$(CC) $(CFLAGS) -O2 -g -DDEBUG -c $^
 else
-	$(CC) $(CFLAGS) -c $^
+	$(CC) $(CFLAGS) -O2 -c $^
 endif
 
 
