@@ -865,12 +865,12 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	char *right_angle;
 	char *content_end;
 	char *search_from;
+	char *sp;
 	size_t clen = strlen("class=\"");
 	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
-	int got_tags = 0;
 
 	if (buf_init(&open_tag, 64) < 0)
 		goto fail;
@@ -905,24 +905,19 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			content_end = strstr(p, close_tag.buf_head);
 
@@ -978,6 +973,9 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 			range = (content_end - left_angle);
 			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 			content_end = savep = left_angle;
+
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 	}
 
@@ -1008,12 +1006,12 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 	char *right_angle;
 	char *content_end;
 	char *search_from;
+	char *sp;
 	size_t alen = strlen(attribute) + 2;
 	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
-	int got_tags = 0;
 
 	if (buf_init(&open_tag, 64) < 0)
 		goto fail;
@@ -1048,24 +1046,19 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			content_end = strstr(p, close_tag.buf_head);
 
@@ -1122,6 +1115,8 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 
 			savep = ++content_end;
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 	}
 
@@ -1156,12 +1151,12 @@ html_remove_elements_id(buf_t *buf, const char *id)
 	char *right_angle;
 	char *content_end;
 	char *search_from;
+	char *sp;
 	size_t ilen = strlen("id=\"");
 	size_t range;
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
-	int got_tags = 0;
 
 	if (buf_init(&open_tag, 64) < 0)
 		goto fail;
@@ -1196,24 +1191,19 @@ html_remove_elements_id(buf_t *buf, const char *id)
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, (left_angle + 1), ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			content_end = strstr(p, close_tag.buf_head);
 
@@ -1267,10 +1257,11 @@ html_remove_elements_id(buf_t *buf, const char *id)
 				content_end = buf->buf_tail;
 
 			range = (content_end - left_angle);
-
 			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 
 			savep = ++content_end;
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 	}
 
