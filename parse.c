@@ -1027,8 +1027,13 @@ extract_wiki_article(buf_t *buf)
 	size_t len;
 	char *tag_content_ptr;
 
+	fprintf(stdout, "Parsing Wikipedia article\n");
+
 	if (!(buffer = calloc(DEFAULT_TMP_BUF_SIZE, 1)))
+	{
+		fprintf(stderr, "extract_wiki_article: failed to allocate memory for buffer (%s)\n", strerror(errno));
 		goto fail;
+	}
 
 	clear_struct(&article_header);
 
@@ -1327,6 +1332,8 @@ extract_wiki_article(buf_t *buf)
 	remove_excess_nl(&content_buf);
 	remove_excess_sp(&content_buf);
 
+	fprintf(stdout, "Formatting text\n");
+
 	if (option_set(OPT_FORMAT_XML))
 	{
 		buf_append(&content_buf, "</text>\n</wiki>\n");
@@ -1408,6 +1415,8 @@ extract_wiki_article(buf_t *buf)
 		buf_snip(&content_buf, (content_buf.buf_tail - t));
 	}
 
+	fprintf(stdout, "Writing to file\n");
+
 	size_t buf_len = strlen(buffer);
 	if (write(out_fd, buffer, buf_len) != buf_len) /* Our article header */
 	{
@@ -1436,6 +1445,8 @@ extract_wiki_article(buf_t *buf)
 
 	free(buffer);
 	buffer = NULL;
+
+	fprintf(stdout, "Finished!\n");
 
 	return 0;
 

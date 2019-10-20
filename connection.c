@@ -83,8 +83,11 @@ open_connection(connection_t *conn)
 	struct addrinfo *ainf = NULL;
 	struct addrinfo *aip = NULL;
 
-	buf_init(&conn->read_buf, HTTP_DEFAULT_READ_BUF_SIZE);
-	buf_init(&conn->write_buf, HTTP_DEFAULT_WRITE_BUF_SIZE);
+	if (buf_init(&conn->read_buf, HTTP_DEFAULT_READ_BUF_SIZE) < 0)
+		goto fail;
+
+	if (buf_init(&conn->write_buf, HTTP_DEFAULT_WRITE_BUF_SIZE) < 0)
+		goto fail_release_bufs;
 
 	clear_struct(&sock4);
 
@@ -126,6 +129,8 @@ open_connection(connection_t *conn)
 
 	assert(conn->sock > 2);
 
+	fprintf(stdout, "Connecting to remove server...\n");
+
 	if (connect(conn->sock, (struct sockaddr *)&sock4, (socklen_t)sizeof(sock4)) != 0)
 	{
 		fprintf(stderr, "open_connection: connect error (%s)\n", strerror(errno));
@@ -134,6 +139,8 @@ open_connection(connection_t *conn)
 
 	if (option_set(OPT_USE_TLS))
 	{
+		fprintf(stdout, "Negotiating TLS connection\n");
+
 		__init_openssl();
 
 		if (!(conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method())))
@@ -154,6 +161,10 @@ open_connection(connection_t *conn)
 
 	freeaddrinfo(ainf);
 	return 0;
+
+	fail_release_bufs:
+	buf_destroy(&conn->read_buf);
+	buf_destroy(&conn->write_buf);
 
 	fail_free_ssl_ctx:
 	SSL_CTX_free(conn->ssl_ctx);
