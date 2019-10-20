@@ -274,7 +274,9 @@ http_build_request_header(connection_t *conn, const char *http_verb, const char 
 	buf_t tbuf;
 	static char header_buf[4096];
 
-	buf_init(&tbuf, HTTP_URL_MAX);
+	if (buf_init(&tbuf, HTTP_URL_MAX) < 0)
+		goto fail;
+
 	buf_append(&tbuf, conn->host);
 
 	if (*(tbuf.buf_tail - 1) == '/')
@@ -318,6 +320,9 @@ http_build_request_header(connection_t *conn, const char *http_verb, const char 
 	buf_destroy(&tbuf);
 
 	return 0;
+
+	fail:
+	return -1;
 }
 
 int
@@ -729,7 +734,9 @@ http_append_header(buf_t *buf, http_header_t *hh)
 
 	buf_t tmp;
 
-	buf_init(&tmp, HTTP_COOKIE_MAX+strlen("Cookie: "));
+	if (buf_init(&tmp, HTTP_COOKIE_MAX+strlen("Cookie: ")) < 0)
+		goto fail;
+
 	buf_append(&tmp, hh->name);
 	buf_append(&tmp, ": ");
 	buf_append(&tmp, hh->value);
@@ -742,6 +749,9 @@ http_append_header(buf_t *buf, http_header_t *hh)
 	buf_destroy(&tmp);
 
 	return 0;
+
+	fail:
+	return -1;
 }
 
 static http_header_t *generic_hp;
