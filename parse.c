@@ -401,7 +401,7 @@ __count_non_ascii(char *data, char *end)
 
 	while (p < end)
 	{
-		if (!isascii(*p))
+		if (!isascii(*p) && ((*p >> 4) != 0x0e))
 			++count;
 		++p;
 	}
