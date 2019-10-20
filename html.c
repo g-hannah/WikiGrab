@@ -961,7 +961,6 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 				content_end = buf->buf_tail;
 
 			range = (content_end - left_angle);
-			fprintf(stderr, "REMOVING CONTENT OF CLASS \"%s\"\n\n%.*s\n\n", classname, (int)range, left_angle);
 			buf_collapse(buf, (off_t)(left_angle - buf->buf_head), range);
 			content_end = savep = left_angle;
 		}
