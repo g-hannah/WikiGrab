@@ -29,6 +29,7 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 	char *search_from;
 	size_t len;
 	int depth;
+	int cnt = 0;
 
 	savep = buf->buf_head;
 
@@ -132,6 +133,7 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 			content->data_len = len;
 			content->off = (off_t)(start - buf->buf_head);
 			assert(content->off < buf->data_len);
+			++cnt;
 
 			savep = end;
 
@@ -160,7 +162,7 @@ html_get_all(wiki_cache_t *cachep, buf_t *buf, const char *open_pattern, const c
 	}
 #endif
 
-	return 0;
+	return cnt;
 
 	fail:
 	return -1;
@@ -184,6 +186,7 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	buf_t close_tag;
 	int got_tags = 0;
 	int depth = 0;
+	int cnt = 0;
 	size_t len;
 
 	savep = buf->buf_head;
@@ -314,6 +317,7 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 			assert(content->off < buf->data_len);
 			assert(content->data_len < buf->data_len);
 			assert(content->data_len < content->alloc_len);
+			++cnt;
 
 			savep = ++end;
 		}
@@ -322,7 +326,7 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return 0;
+	return cnt;
 
 	fail_release_bufs:
 	buf_destroy(&open_tag);
@@ -350,6 +354,7 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	buf_t close_tag;
 	int got_tags = 0;
 	int depth = 0;
+	int cnt = 0;
 	size_t len;
 
 	savep = buf->buf_head;
@@ -483,6 +488,7 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 			assert(content->off < buf->data_len);
 			assert(content->data_len < buf->data_len);
 			assert(content->data_len < content->alloc_len);
+			++cnt;
 
 			savep = ++end;
 		}
@@ -491,7 +497,7 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return 0;
+	return cnt;
 
 	fail_release_bufs:
 	buf_destroy(&open_tag);
@@ -515,11 +521,12 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	char *right_angle;
 	char *end;
 	char *search_from;
+	char *sp;
 	size_t alen = strlen(attribute) + 2;
 	buf_t open_tag;
 	buf_t close_tag;
-	int got_tags = 0;
 	int depth = 0;
+	int cnt = 0;
 	size_t len;
 
 	savep = buf->buf_head;
@@ -552,25 +559,20 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			end = strstr(p, close_tag.buf_head);
 
@@ -653,6 +655,7 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 			assert(content->off < buf->data_len);
 			assert(content->data_len < buf->data_len);
 			assert(content->data_len < content->alloc_len);
+			++cnt;
 
 			savep = ++end;
 		}
@@ -661,7 +664,7 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	buf_destroy(&open_tag);
 	buf_destroy(&close_tag);
 
-	return 0;
+	return cnt;
 
 	fail_release_bufs:
 	buf_destroy(&open_tag);
