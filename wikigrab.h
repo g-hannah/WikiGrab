@@ -22,12 +22,14 @@ uint32_t runtime_options;
 #define set_option(o) (runtime_options |= (o))
 #define unset_option(o) (runtime_options &= ~(o))
 
-#define OPT_USE_TLS 0x1
 #define OPT_OUT_TTY 0x2 /* Print the parsed file to stdout */
 #define OPT_REQ_HEADER 0x4 /* Print HTTP request header(s) */
 #define OPT_RES_HEADER 0x8 /* Print HTTP response header(s) */
 #define OPT_OPEN_FINISH 0x10 /* Open the article when done */
 #define OPT_FORMAT_TXT 0x20 /* format in plain text file */
 #define OPT_FORMAT_XML 0x40 /* format in XML file */
+
+#define COL_GREEN "\x1b[38;5;40m"
+#define COL_END "\x1b[m"
 
 #endif /* !defined WIKI_H */
