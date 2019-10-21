@@ -211,7 +211,6 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 			}
 
 			q = memchr(p, '"', (buf->buf_tail - p));
-
 			if (!q || memcmp(p, classname, (q - p)))
 			{
 				savep = ++p;
@@ -324,6 +323,8 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 			++cnt;
 
 			savep = ++end;
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 
 	out_release_bufs:
@@ -383,7 +384,6 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 			}
 
 			q = memchr(p, '"', (buf->buf_tail - p));
-
 			if (!q || memcmp(p, id, (q - p)))
 			{
 				savep = ++p;
@@ -499,6 +499,8 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 			++cnt;
 
 			savep = ++end;
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 
 	out_release_bufs:
@@ -559,7 +561,6 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 			}
 
 			q = memchr(p, '"', (buf->buf_tail - p));
-
 			if (!q || memcmp(p, value, (q - p)))
 			{
 				savep = ++p;
@@ -675,6 +676,8 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 			++cnt;
 
 			savep = ++end;
+			buf_clear(&open_tag);
+			buf_clear(&close_tag);
 		}
 
 	out_release_bufs:
