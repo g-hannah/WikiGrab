@@ -21,6 +21,35 @@
 
 #define CONTENT_DATA_SIZE		16384UL
 
+const char *const unwanted_class[] =
+{
+	"box-Multiple_issues",
+	"mw-references-wrap",
+	"toc",
+	"mw-empty-elt",
+	"mw-editsection",
+	"citation",
+	"infobox",
+	"navbox",
+	"box-Cleanup",
+	"box-Expand_language",
+	"hatnote",
+	"vertical-navbox",
+	"gallery",
+	NULL
+};
+
+const char *const unwanted_id[] =
+{
+	"cite_note-FOOTNOTE",
+	"See_also",
+	"Notes",
+	"References",
+	"External_links",
+	"coordinates",
+	NULL
+};
+
 int
 sort_content_cache(const void *obj1, const void *obj2)
 {
@@ -1233,97 +1262,49 @@ extract_wiki_article(buf_t *buf)
 	else
 		strcpy(article_header.server_ipv6->value, "None");
 
-/*
- * BEGIN PARSING THE TEXT FROM THE ARTICLE.
- */
 
 	fprintf(stdout, "Formatting text\n");
 
 	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
 
-/* Stuff we do not want */
-	const char *const unwanted_class[] =
-	{
-		"box-Multiple_issues",
-		"mw-references-wrap",
-		"toc",
-		"mw-empty-elt",
-		"mw-editsection",
-		"citation",
-		"infobox",
-		"navbox",
-		"box-Cleanup",
-		"box-Expand_language",
-		"hatnote",
-		"vertical-navbox",
-		"gallery",
-		NULL
-	};
 
-	const char *const unwanted_id[] =
-	{
-		"cite_note-FOOTNOTE",
-		"See_also",
-		"Notes",
-		"References",
-		"External_links",
-		"coordinates",
-		NULL
-	};
-
+	/* Remove HTML content of unwanted classes */
 	for (i = 0; unwanted_class[i] != NULL; ++i)
 	{
 		if (html_remove_elements_class(&content_buf, unwanted_class[i]) < 0)
 			goto out_destroy_file;
 	}
 
+	/* Remove HTML content of unwanted IDs */
 	for (i = 0; unwanted_id[i] != NULL; ++i)
 	{
 		if (html_remove_elements_id(&content_buf, unwanted_id[i]) < 0)
 			goto out_destroy_file;
 	}
 
+	/* Remove this as it can be embedded within content we do want */
 	html_remove_content(&content_buf, "<style", "</style");
 
-#if 0
-	html_remove_elements_class(&content_buf, "box-Multiple_issues");
-	html_remove_elements_class(&content_buf, "mw-references-wrap");
-	html_remove_elements_class(&content_buf, "toc");
-	html_remove_elements_class(&content_buf, "mw-empty-elt");
-	html_remove_elements_class(&content_buf, "mw-editsection");
-	html_remove_elements_class(&content_buf, "citation");
-	html_remove_elements_class(&content_buf, "infobox");
-	html_remove_elements_class(&content_buf, "navbox");
-	html_remove_elements_class(&content_buf, "box-Cleanup");
-	html_remove_elements_class(&content_buf, "box-Expand_language");
-	html_remove_elements_class(&content_buf, "hatnote");
-	html_remove_elements_class(&content_buf, "vertical-navbox");
-	html_remove_elements_class(&content_buf, "gallery");
-	html_remove_elements_id(&content_buf, "cite_note-FOOTNOTE");
-	html_remove_elements_id(&content_buf, "See_also");
-	html_remove_elements_id(&content_buf, "Notes");
-	html_remove_elements_id(&content_buf, "References");
-	html_remove_elements_id(&content_buf, "External_links");
-#endif
 
-/* Stuff we want */
+	/* Get all the article paragraphs */
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
 		goto out_destroy_file;
 
+	/*
+	 * Seems to be used for things like quotations ("<dl>...<i>quotation</i></dl>")
+	 * Do not extract <i></i>, however, because that can be embedded within
+	 * <p></p> tags which can result in <i></i> content being repeated several
+	 * times in the output text.
+	 */
 	if (html_get_all(content_cache, &content_buf, "<dl>", "</dl>") < 0)
 		goto out_destroy_file;
 
+	/* Content that should retain its formatting (such as source code examples) */
 	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
 		goto out_destroy_file;
 
-/*
- * If we put "<li", it will parse "<link" and possibly match it with </li>.
- * So we have to put <li>. In any case, it would seem that the only <li>
- * content that is of the format "<li class=..." is that related to
- * citations, references, etc, which we do not want anyway. The ones that
- * are formatted as <li> in articles seems to be what we are after.
- */
+	/* Get all list items */
 	if (html_get_all(content_cache, &content_buf, "<li>", "</li>") < 0)
 		goto out_destroy_file;
 
@@ -1337,6 +1318,7 @@ extract_wiki_article(buf_t *buf)
 	if ((nr_maths = html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation")) < 0)
 		goto out_destroy_file;
 
+	/* Keep the section headlines */
 	if (html_get_all_class(content_cache, &content_buf, "mw-headline") < 0)
 		goto out_destroy_file;
 
