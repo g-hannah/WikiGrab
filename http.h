@@ -68,9 +68,6 @@ int http_check_header(buf_t *, const char *, off_t, off_t *) __nonnull((1,2,4)) 
 char *http_fetch_header(buf_t *, const char *, http_header_t *, off_t) __nonnull((1,2,3)) __wur;
 char *http_parse_host(char *, char *) __nonnull((1,2)) __wur;
 char *http_parse_page(char *, char *) __nonnull((1,2)) __wur;
-int http_parse_links(wiki_cache_t *, buf_t *, char *) __nonnull((1,2,3)) __wur;
-int wiki_cache_http_link_ctor(void *) __nonnull((1)) __wur;
-void wiki_cache_http_link_dtor(void *) __nonnull((1));
 int wiki_cache_http_cookie_ctor(void *) __nonnull((1)) __wur;
 void wiki_cache_http_cookie_dtor(void *) __nonnull((1));
 
