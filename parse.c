@@ -248,6 +248,7 @@ __remove_html_tags(buf_t *buf)
 	return;
 }
 
+#if 0
 static void
 __remove_inline_refs(buf_t *buf)
 {
@@ -286,6 +287,7 @@ __remove_inline_refs(buf_t *buf)
 			break;
 	}
 }
+#endif
 
 static void
 __remove_html_encodings(buf_t *buf)
@@ -1088,8 +1090,6 @@ extract_wiki_article(buf_t *buf)
 	size_t len;
 	char *tag_content_ptr;
 
-	fprintf(stdout, "Parsing Wikipedia article\n");
-
 	if (!(buffer = calloc(DEFAULT_TMP_BUF_SIZE, 1)))
 	{
 		fprintf(stderr, "extract_wiki_article: failed to allocate memory for buffer (%s)\n", strerror(errno));
@@ -1219,7 +1219,6 @@ extract_wiki_article(buf_t *buf)
 	if ((out_fd = open(file_title.buf_head, O_RDWR|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR)) < 0)
 		goto fail_release_mem;
 
-	fprintf(stdout, "Created file \"%s\"\n", file_title.buf_head);
 
 	if (server->value[0])
 	{
@@ -1261,9 +1260,6 @@ extract_wiki_article(buf_t *buf)
 		strcpy(article_header.server_ipv6->value, inet_ntop(AF_INET6, sock6.sin6_addr.s6_addr, inet6_string, INET6_ADDRSTRLEN));
 	else
 		strcpy(article_header.server_ipv6->value, "None");
-
-
-	fprintf(stdout, "Formatting text\n");
 
 	if (__extract_area(buf, &content_buf, "<div id=\"mw-content-text\"", "</div") < 0)
 		goto out_destroy_file;
@@ -1348,7 +1344,7 @@ extract_wiki_article(buf_t *buf)
 		parse_maths_expressions(&content_buf);
 
 	__remove_html_tags(&content_buf);
-	__remove_inline_refs(&content_buf);
+	//__remove_inline_refs(&content_buf);
 	__remove_html_encodings(&content_buf);
 	__replace_html_entities(&content_buf);
 	remove_excess_nl(&content_buf);
@@ -1436,8 +1432,6 @@ extract_wiki_article(buf_t *buf)
 		buf_snip(&content_buf, (content_buf.buf_tail - t));
 	}
 
-	fprintf(stdout, "Writing to file\n");
-
 	size_t buf_len = strlen(buffer);
 	if (write(out_fd, buffer, buf_len) != buf_len) /* Our article header */
 	{
@@ -1448,6 +1442,8 @@ extract_wiki_article(buf_t *buf)
 	buf_write_fd(out_fd, &content_buf); /* The article */
 	close(out_fd);
 	out_fd = -1;
+
+	fprintf(stdout, "Created file \"%s\"\n", file_title.buf_head);
 
 	wiki_cache_dealloc(value_cache, (void *)article_header.title, &article_header.title);
 	wiki_cache_dealloc(value_cache, (void *)article_header.server_name, &article_header.server_name);
@@ -1466,8 +1462,6 @@ extract_wiki_article(buf_t *buf)
 
 	free(buffer);
 	buffer = NULL;
-
-	fprintf(stdout, "Finished!\n");
 
 	return 0;
 
