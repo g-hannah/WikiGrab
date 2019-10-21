@@ -28,7 +28,7 @@ const char *const unwanted_class[] =
 	"toc",
 	"mw-empty-elt",
 	"mw-editsection",
-	"citation",
+	"reference",
 	"infobox",
 	"navbox",
 	"box-Cleanup",
