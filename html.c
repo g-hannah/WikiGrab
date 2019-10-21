@@ -189,6 +189,7 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	int depth = 0;
 	int cnt = 0;
 	size_t len;
+	size_t cnamelen = strlen(classname);
 
 	savep = buf->buf_head;
 	if (buf_init(&open_tag, 64) < 0)
@@ -210,8 +211,8 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 				continue;
 			}
 
-			q = memchr(p, '"', (buf->buf_tail - p));
-			if (!q || memcmp(p, classname, (q - p)))
+			q = (p + cnamelen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
@@ -362,6 +363,7 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	int depth = 0;
 	int cnt = 0;
 	size_t len;
+	size_t idlen = strlen(id);
 
 	savep = buf->buf_head;
 	if (buf_init(&open_tag, 64) < 0)
@@ -383,8 +385,8 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 				continue;
 			}
 
-			q = memchr(p, '"', (buf->buf_tail - p));
-			if (!q || memcmp(p, id, (q - p)))
+			q = (p + idlen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
@@ -539,6 +541,7 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	int depth = 0;
 	int cnt = 0;
 	size_t len;
+	size_t vlen = strlen(value);
 
 	savep = buf->buf_head;
 	if (buf_init(&open_tag, 64) < 0)
@@ -560,8 +563,8 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 				continue;
 			}
 
-			q = memchr(p, '"', (buf->buf_tail - p));
-			if (!q || memcmp(p, value, (q - p)))
+			q = (p + vlen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
@@ -889,8 +892,10 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 	char *content_end;
 	char *search_from;
 	char *sp;
+	char *q;
 	size_t clen = strlen("class=\"");
 	size_t range;
+	size_t cnamelen = strlen(classname);
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
@@ -913,6 +918,13 @@ html_remove_elements_class(buf_t *buf, const char *classname)
 				goto out_release_bufs;
 
 			if (memcmp((p - clen), "class=\"", clen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			q = (p + cnamelen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
@@ -1030,8 +1042,10 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 	char *content_end;
 	char *search_from;
 	char *sp;
+	char *q;
 	size_t alen = strlen(attribute) + 2;
 	size_t range;
+	size_t vlen = strlen(value);
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
@@ -1054,6 +1068,13 @@ html_remove_elements_attribute(buf_t *buf, const char *attribute, const char *va
 				goto out_release_bufs;
 
 			if (memcmp((p - alen), attribute, (alen - 2)))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			q = (p + vlen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
@@ -1175,8 +1196,10 @@ html_remove_elements_id(buf_t *buf, const char *id)
 	char *content_end;
 	char *search_from;
 	char *sp;
+	char *q;
 	size_t ilen = strlen("id=\"");
 	size_t range;
+	size_t idlen = strlen(id);
 	buf_t open_tag;
 	buf_t close_tag;
 	int depth = 0;
@@ -1199,6 +1222,13 @@ html_remove_elements_id(buf_t *buf, const char *id)
 				goto out_release_bufs;
 
 			if (memcmp((p - ilen), "id=\"", ilen))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			q = (p + idlen);
+			if (*q != ' ' && *q != '"')
 			{
 				savep = ++p;
 				continue;
