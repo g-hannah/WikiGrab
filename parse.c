@@ -920,7 +920,7 @@ __normalise_file_title(buf_t *buf)
 	while (p < tail)
 	{
 		if (*p == 0x20
-		|| (*p != 0x5f && !isalpha(*p) && !isdigit(*p)))
+		|| (*p != 0x5f && !isalpha(*p) && !isdigit(*p) && isascii(*p)))
 		{
 			*p++ = 0x5f;
 			if (*(p-2) == 0x5f)
