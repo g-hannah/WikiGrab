@@ -196,7 +196,7 @@ open_connection(connection_t *conn)
 
 	RESET_TIMEOUT();
 
-	fprintf(stdout, "Connected \x1b[38;5;10m✓\x1b[m\n");
+	fprintf(stdout, "Connected %s✓%s\n", COL_GREEN, COL_END);
 
 	freeaddrinfo(ainf);
 	return 0;
