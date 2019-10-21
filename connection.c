@@ -6,6 +6,8 @@
 #include <openssl/conf.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <setjmp.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +17,33 @@
 #include "connection.h"
 #include "http.h"
 #include "wikigrab.h"
+
+static sigjmp_buf __timeout_env;
+static struct sigaction oact;
+static struct sigaction nact;
+
+static void
+handle_timeout(int signo)
+{
+	siglongjmp(__timeout_env, 1);
+}
+
+#define SET_TIMEOUT(s)\
+do {\
+	clear_struct(&oact);\
+	clear_struct(&nact);\
+	nact.sa_flags = 0;\
+	nact.sa_handler = handle_timeout;\
+	sigemptyset(&nact.sa_mask);\
+	sigaction(SIGALRM, &nact, &oact);\
+	alarm((s));\
+} while (0)
+
+#define RESET_TIMEOUT()\
+do {\
+	alarm(0);\
+	sigaction(SIGALRM, &oact, NULL);\
+} while(0)
 
 void
 conn_init(connection_t *conn)
@@ -131,6 +160,14 @@ open_connection(connection_t *conn)
 
 	fprintf(stdout, "Connecting to remove server...\n");
 
+
+	SET_TIMEOUT(4);
+	if (sigsetjmp(__timeout_env, 1) != 0)
+	{
+		fprintf(stderr, "Operation timed out\n");
+		shutdown(conn->sock, SHUT_RDWR);
+	}
+
 	if (connect(conn->sock, (struct sockaddr *)&sock4, (socklen_t)sizeof(sock4)) != 0)
 	{
 		fprintf(stderr, "open_connection: connect error (%s)\n", strerror(errno));
@@ -158,6 +195,8 @@ open_connection(connection_t *conn)
 		SSL_set_fd(conn->ssl, conn->sock); /* Set the socket for reading/writing */
 		SSL_set_connect_state(conn->ssl); /* Set as client */
 	}
+
+	RESET_TIMEOUT();
 
 	freeaddrinfo(ainf);
 	return 0;
