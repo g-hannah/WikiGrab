@@ -47,6 +47,7 @@ const char *const unwanted_id[] =
 	"References",
 	"External_links",
 	"coordinates",
+	"Citations",
 	NULL
 };
 
