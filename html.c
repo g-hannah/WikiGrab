@@ -181,10 +181,11 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 	char *right_angle;
 	char *end;
 	char *search_from;
+	char *sp;
+	char *q;
 	size_t clen = strlen("class=\"");
 	buf_t open_tag;
 	buf_t close_tag;
-	int got_tags = 0;
 	int depth = 0;
 	int cnt = 0;
 	size_t len;
@@ -209,6 +210,14 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 				continue;
 			}
 
+			q = memchr(p, '"', (buf->buf_tail - p));
+
+			if (!q || memcmp(p, classname, (q - p)))
+			{
+				savep = ++p;
+				continue;
+			}
+
 			left_angle = p;
 			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
 				--left_angle;
@@ -219,25 +228,20 @@ html_get_all_class(wiki_cache_t *cachep, buf_t *buf, const char *classname)
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			end = strstr(p, close_tag.buf_head);
 
@@ -349,10 +353,11 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 	char *right_angle;
 	char *end;
 	char *search_from;
+	char *sp;
+	char *q;
 	size_t ilen = strlen("id=\"");
 	buf_t open_tag;
 	buf_t close_tag;
-	int got_tags = 0;
 	int depth = 0;
 	int cnt = 0;
 	size_t len;
@@ -377,6 +382,14 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 				continue;
 			}
 
+			q = memchr(p, '"', (buf->buf_tail - p));
+
+			if (!q || memcmp(p, id, (q - p)))
+			{
+				savep = ++p;
+				continue;
+			}
+
 			left_angle = p;
 			while (*left_angle != '<' && left_angle > (buf->buf_head + 1))
 				--left_angle;
@@ -387,25 +400,20 @@ html_get_all_id(wiki_cache_t *cachep, buf_t *buf, const char *id)
 				continue;
 			}
 
-			if (!got_tags)
+			sp = memchr(left_angle, ' ', (p - left_angle));
+
+			if (!sp)
 			{
-				char *sp = memchr(left_angle, ' ', (p - left_angle));
-
-				if (!sp)
-				{
-					savep = ++p;
-					continue;
-				}
-
-				buf_append_ex(&open_tag, left_angle, (sp - left_angle));
-				*(open_tag.buf_tail) = 0;
-
-				buf_append(&close_tag, "</");
-				buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
-				*(close_tag.buf_tail) = 0;
-
-				got_tags = 1;
+				savep = ++p;
+				continue;
 			}
+
+			buf_append_ex(&open_tag, left_angle, (sp - left_angle));
+			*(open_tag.buf_tail) = 0;
+
+			buf_append(&close_tag, "</");
+			buf_append_ex(&close_tag, left_angle+1, ((sp - left_angle) - 1));
+			*(close_tag.buf_tail) = 0;
 
 			end = strstr(p, close_tag.buf_head);
 
@@ -522,6 +530,7 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 	char *end;
 	char *search_from;
 	char *sp;
+	char *q;
 	size_t alen = strlen(attribute) + 2;
 	buf_t open_tag;
 	buf_t close_tag;
@@ -544,6 +553,14 @@ html_get_all_attribute(wiki_cache_t *cachep, buf_t *buf, const char *attribute, 
 				goto out_release_bufs;
 
 			if (memcmp((p - alen), attribute, (alen - 2)))
+			{
+				savep = ++p;
+				continue;
+			}
+
+			q = memchr(p, '"', (buf->buf_tail - p));
+
+			if (!q || memcmp(p, value, (q - p)))
 			{
 				savep = ++p;
 				continue;
