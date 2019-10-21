@@ -30,6 +30,7 @@ uint32_t runtime_options;
 #define OPT_FORMAT_XML 0x40 /* format in XML file */
 
 #define COL_GREEN "\x1b[38;5;40m"
+#define COL_ORANGE "\x1b[38;5;208m"
 #define COL_END "\x1b[m"
 
 #endif /* !defined WIKI_H */
