@@ -158,7 +158,7 @@ open_connection(connection_t *conn)
 
 	assert(conn->sock > 2);
 
-	fprintf(stdout, "Connecting to remove server...\n");
+	fprintf(stdout, "Connecting to %s...\n", inet_ntoa(sock4.sin_addr));
 
 
 	SET_TIMEOUT(4);
@@ -176,8 +176,6 @@ open_connection(connection_t *conn)
 
 	if (option_set(OPT_USE_TLS))
 	{
-		fprintf(stdout, "Negotiating TLS connection\n");
-
 		__init_openssl();
 
 		if (!(conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method())))
@@ -197,6 +195,8 @@ open_connection(connection_t *conn)
 	}
 
 	RESET_TIMEOUT();
+
+	fprintf(stdout, "Connected \x1b[38;5;10m✓\x1b[m\n");
 
 	freeaddrinfo(ainf);
 	return 0;
