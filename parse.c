@@ -401,8 +401,14 @@ __count_non_ascii(char *data, char *end)
 
 	while (p < end)
 	{
-		if (!isascii(*p) && ((*p >> 4) != 0x0e))
-			++count;
+		if (!isascii(*p))
+		{
+			if ((*p >> 4) == 0x0e)
+				count += 2;
+			else
+				++count;
+		}
+
 		++p;
 	}
 
@@ -1322,7 +1328,9 @@ extract_wiki_article(buf_t *buf)
  * duplicate equations sometimes due to one being here and one also being
  * elsewhere (not bounded in <>)
  */
-	if (html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation") < 0)
+
+	int nr_maths = 0;
+	if ((nr_maths = html_get_all(content_cache, &content_buf, "<annotation encoding=\"application/x-tex\"", "</annotation")) < 0)
 		goto out_destroy_file;
 
 	if (html_get_all_class(content_cache, &content_buf, "mw-headline") < 0)
@@ -1350,7 +1358,8 @@ extract_wiki_article(buf_t *buf)
 		++cp;
 	}
 
-	parse_maths_expressions(&content_buf);
+	if (nr_maths > 0)
+		parse_maths_expressions(&content_buf);
 
 	__remove_html_tags(&content_buf);
 	__remove_inline_refs(&content_buf);
