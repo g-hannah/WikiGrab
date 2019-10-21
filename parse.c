@@ -1318,6 +1318,9 @@ extract_wiki_article(buf_t *buf)
 	if (html_get_all_class(content_cache, &content_buf, "mw-headline") < 0)
 		goto out_destroy_file;
 
+	if (html_get_all_class(content_cache, &content_buf, "quotebox-quote") < 0)
+		goto out_destroy_file;
+
 	//if (html_get_all(content_cache, &content_buf, "<table", "</table") < 0)
 		//goto out_destroy_file;
 
