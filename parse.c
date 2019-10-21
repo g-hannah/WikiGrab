@@ -1268,6 +1268,7 @@ extract_wiki_article(buf_t *buf)
 		"Notes",
 		"References",
 		"External_links",
+		"coordinates",
 		NULL
 	};
 
@@ -1308,6 +1309,9 @@ extract_wiki_article(buf_t *buf)
 
 /* Stuff we want */
 	if (html_get_all(content_cache, &content_buf, "<p", "</p") < 0)
+		goto out_destroy_file;
+
+	if (html_get_all(content_cache, &content_buf, "<dl>", "</dl>") < 0)
 		goto out_destroy_file;
 
 	if (html_get_all(content_cache, &content_buf, "<pre", "</pre") < 0)
