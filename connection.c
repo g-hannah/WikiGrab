@@ -145,10 +145,7 @@ open_connection(connection_t *conn)
 		goto fail_release_ainf;
 	}
 
-	if (option_set(OPT_USE_TLS))
-		sock4.sin_port = htons(HTTPS_PORT_NR);
-	else
-		sock4.sin_port = htons(HTTP_PORT_NR);
+	sock4.sin_port = htons(HTTPS_PORT_NR);
 
 	if ((conn->sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
@@ -158,7 +155,7 @@ open_connection(connection_t *conn)
 
 	assert(conn->sock > 2);
 
-	fprintf(stdout, "Connecting to %s...\n", inet_ntoa(sock4.sin_addr));
+	fprintf(stdout, "Connecting to %s⇢  %s%s\n", COL_ORANGE, COL_END, inet_ntoa(sock4.sin_addr));
 
 
 	SET_TIMEOUT(4);
@@ -174,25 +171,23 @@ open_connection(connection_t *conn)
 		goto fail_release_ainf;
 	}
 
-	if (option_set(OPT_USE_TLS))
+	__init_openssl();
+
+	if (!(conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method())))
 	{
-		__init_openssl();
-
-		if (!(conn->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method())))
-		{
-			fprintf(stderr, "open_connection: SSL_CTX_new error\n");
-			goto fail_release_ainf;
-		}
-
-		if (!(conn->ssl = SSL_new(conn->ssl_ctx)))
-		{
-			fprintf(stderr, "open_connection: SSL_new error\n");
-			goto fail_free_ssl_ctx;
-		}
-
-		SSL_set_fd(conn->ssl, conn->sock); /* Set the socket for reading/writing */
-		SSL_set_connect_state(conn->ssl); /* Set as client */
+		fprintf(stderr, "open_connection: SSL_CTX_new error\n");
+		goto fail_release_ainf;
 	}
+
+	if (!(conn->ssl = SSL_new(conn->ssl_ctx)))
+	{
+		fprintf(stderr, "open_connection: SSL_new error\n");
+		goto fail_free_ssl_ctx;
+	}
+
+	SSL_set_fd(conn->ssl, conn->sock); /* Set the socket for reading/writing */
+	SSL_set_connect_state(conn->ssl); /* Set as client */
+
 
 	RESET_TIMEOUT();
 
@@ -225,13 +220,10 @@ close_connection(connection_t *conn)
 	close(conn->sock);
 	conn->sock = -1;
 
-	if (option_set(OPT_USE_TLS))
-	{
-		SSL_CTX_free(conn->ssl_ctx);
-		conn->ssl_ctx = NULL;
-		SSL_free(conn->ssl);
-		conn->ssl = NULL;
-	}
+	SSL_CTX_free(conn->ssl_ctx);
+	conn->ssl_ctx = NULL;
+	SSL_free(conn->ssl);
+	conn->ssl = NULL;
 
 	buf_destroy(&conn->read_buf);
 	buf_destroy(&conn->write_buf);
@@ -239,6 +231,7 @@ close_connection(connection_t *conn)
 	return;
 }
 
+#if 0
 int
 conn_switch_to_tls(connection_t *conn)
 {
@@ -278,3 +271,4 @@ conn_switch_to_tls(connection_t *conn)
 	fail:
 	return -1;
 }
+#endif
