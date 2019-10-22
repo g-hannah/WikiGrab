@@ -108,8 +108,6 @@ get_runtime_options(int argc, char *argv[])
 	 */
 	if (!option_set(OPT_FORMAT_TXT|OPT_FORMAT_XML))
 		set_option(OPT_FORMAT_TXT);
-
-	set_option(OPT_USE_TLS);
 }
 
 static int

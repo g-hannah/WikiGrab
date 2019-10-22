@@ -58,16 +58,12 @@ __read_bytes(connection_t *conn, size_t toread)
 
 	ssize_t n;
 	SSL *ssl = conn->ssl;
-	int sock = conn->sock;
 	size_t r = toread;
 	buf_t *buf = &conn->read_buf;
 
 	while (r)
 	{
-		if (option_set(OPT_USE_TLS))
-			n = buf_read_tls(ssl, buf, r);
-		else
-			n = buf_read_socket(sock, buf, r);
+		n = buf_read_tls(ssl, buf, r);
 
 		if (n < 0)
 			return -1;
@@ -332,16 +328,8 @@ http_send_request(connection_t *conn)
 
 	buf_t *buf = &conn->write_buf;
 
-	if (option_set(OPT_USE_TLS))
-	{
-		if (buf_write_tls(conn_tls(conn), buf) == -1)
-			goto fail;
-	}
-	else
-	{
-		if (buf_write_socket(conn_socket(conn), buf) == -1)
-			goto fail;
-	}
+	if (buf_write_tls(conn_tls(conn), buf) == -1)
+		goto fail;
 
 	return 0;
 
@@ -371,10 +359,7 @@ http_recv_response(connection_t *conn)
 
 	while (!p)
 	{
-		if (option_set(OPT_USE_TLS))
-			buf_read_tls(conn->ssl, &conn->read_buf, 256);
-		else
-			buf_read_socket(conn->sock, &conn->read_buf, 256);
+		buf_read_tls(conn->ssl, &conn->read_buf, 256);
 
 		p = strstr(conn->read_buf.buf_head, HTTP_EOH_SENTINEL);
 	}
@@ -404,10 +389,7 @@ http_recv_response(connection_t *conn)
 
 		while (clen)
 		{
-			if (option_set(OPT_USE_TLS))
-				n = buf_read_tls(conn->ssl, &conn->read_buf, clen);
-			else
-				n = buf_read_socket(conn->sock, &conn->read_buf, clen);
+			n = buf_read_tls(conn->ssl, &conn->read_buf, clen);
 
 			if (n < 0)
 				goto fail_dealloc;
@@ -419,10 +401,7 @@ http_recv_response(connection_t *conn)
 	{
 		clen = 0;
 
-		if (option_set(OPT_USE_TLS))
-			buf_read_tls(conn->ssl, &conn->read_buf, clen);
-		else
-			buf_read_socket(conn->sock, &conn->read_buf, clen);
+		buf_read_tls(conn->ssl, &conn->read_buf, clen);
 	}
 
 	assert(conn->read_buf.magic == BUFFER_MAGIC);
