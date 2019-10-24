@@ -112,7 +112,7 @@ buf_shift(buf_t *buf, off_t offset, size_t range)
 	size_t slack = buf_slack(buf);
 
 	if (range >= slack)
-		buf_extend(buf, __ALIGN((range - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((range - slack)));
 
 /*
  * Do this AFTER extending since memory might be
@@ -172,7 +172,7 @@ buf_append(buf_t *buf, char *str)
 
 	if (len >= slack)
 	{
-		buf_extend(buf, __ALIGN((len - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((len - slack)));
 	}
 
 	strcat(buf->buf_tail, str);
@@ -191,7 +191,7 @@ buf_append_ex(buf_t *buf, char *str, size_t bytes)
 	size_t slack = buf_slack(buf);
 
 	if (bytes >= slack)
-		buf_extend(buf, __ALIGN((bytes - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((bytes - slack)));
 
 	strncpy(buf->buf_tail, str, bytes);
 
@@ -261,7 +261,7 @@ buf_read_fd(int fd, buf_t *buf, size_t bytes)
 		return 0;
 
 	if (bytes >= slack)
-		buf_extend(buf, __ALIGN((bytes - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((bytes - slack)));
 
 	while (toread > 0)
 	{
@@ -308,7 +308,7 @@ buf_read_socket(int sock, buf_t *buf, size_t toread)
 	slack = buf_slack(buf);
 
 	if (toread >= slack)
-		buf_extend(buf, __ALIGN((toread - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((toread - slack)));
 
 	while (1)
 	{
@@ -387,7 +387,7 @@ buf_read_tls(SSL *ssl, buf_t *buf, size_t toread)
 	slack = buf_slack(buf);
 
 	if (toread >= slack)
-		buf_extend(buf, __ALIGN((toread - slack)));
+		buf_extend(buf, BUF_ALIGN_SIZE((toread - slack)));
 
 	while (1)
 	{
@@ -612,7 +612,7 @@ buf_copy(buf_t *to, buf_t *from)
 	assert(from);
 
 	if (to->buf_size < from->buf_size)
-		buf_extend(to, __ALIGN((from->buf_size - to->buf_size)));
+		buf_extend(to, BUF_ALIGN_SIZE((from->buf_size - to->buf_size)));
 
 	memcpy(to->data, from->data, from->buf_size);
 	to->buf_head = (to->data + (from->buf_head - from->data));
@@ -662,5 +662,64 @@ buf_replace(buf_t *buf, char *pattern, char *with)
 		}
 	}
 
+	return;
+}
+
+void
+buf_push_tail(buf_t *buf, size_t by)
+{
+	assert(buf);
+
+	if ((buf->buf_tail - by) < buf->buf_head)
+	{
+		__buf_push_tail(buf, (buf->buf_tail - buf->buf_head));
+		return;
+	}
+
+	__buf_push_tail(buf, by);
+	return;
+}
+
+void
+buf_pull_tail(buf_t *buf, size_t by)
+{
+	assert(buf);
+
+	if ((buf->buf_tail + by) > buf->buf_end)
+	{
+		buf_extend(buf, BUF_ALIGN_SIZE((by - (buf->buf_end - buf->buf_tail))));
+	}
+
+	__buf_pull_tail(buf, by);
+	return;
+}
+
+void
+buf_push_head(buf_t *buf, size_t by)
+{
+	assert(buf);
+
+	if ((buf->buf_head - by) < buf->data)
+	{
+		__buf_push_head(buf, (buf->buf_head - buf->data));
+		return;
+	}
+
+	__buf_push_head(buf, by);
+	return;
+}
+
+void
+buf_pull_head(buf_t *buf, size_t by)
+{
+	assert(buf);
+
+	if ((buf->buf_head + by) > buf->buf_tail)
+	{
+		__buf_pull_head(buf, (buf->buf_tail - buf->buf_head));
+		return;
+	}
+
+	__buf_pull_head(buf, by);
 	return;
 }
