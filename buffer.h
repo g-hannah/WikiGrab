@@ -21,6 +21,9 @@ typedef struct buf_t
 #define buf_used(b) ((b)->buf_tail - (b)->buf_head)
 #define buf_slack(b)	((b)->buf_size - buf_used(b))
 
+#define BUF_NULL_TERMINATE(b)	*((b)->buf_tail) = 0
+#define BUF_ALIGN_SIZE(s) (((s) + 0xf) & ~(0xf))
+
 int buf_init(buf_t *, size_t) __nonnull((1));
 void buf_destroy(buf_t *) __nonnull((1));
 void buf_collapse(buf_t *, off_t, size_t) __nonnull((1));
@@ -31,6 +34,10 @@ void buf_append_ex(buf_t *, char *, size_t) __nonnull((1,2));
 void buf_replace(buf_t *, char *, char *) __nonnull((1,2,3));
 void buf_snip(buf_t *, size_t) __nonnull((1));
 void buf_clear(buf_t *) __nonnull((1));
+void buf_push_head(buf_t *, size_t) __nonnull((1));
+void buf_pull_head(buf_t *, size_t) __nonnull((1));
+void buf_push_tail(buf_t *, size_t) __nonnull((1));
+void buf_pull_tail(buf_t *, size_t) __nonnull((1));
 
 /* return a buf_t object from the heap duplicate of argument */
 buf_t *buf_dup(buf_t *) __nonnull((1)) __wur;
