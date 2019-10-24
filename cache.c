@@ -313,8 +313,9 @@ wiki_cache_destroy(wiki_cache_t *cachep)
 
 	if (cachep->dtor)
 	{
+		wiki_cache_dtor_t dtor = cachep->dtor;
 		for (i = 0; i < capacity; ++i)
-			cachep->dtor(__wiki_cache_object(cachep, i));
+			dtor(__wiki_cache_object(cachep, i));
 	}
 
 	free(cachep->cache);
@@ -343,8 +344,8 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 	int new_capacity = 0;
 	int i;
 	void *old_cache;
-	void *active_ptr_addr = ptr_addr;
-	off_t active_ptr_offset;
+	void *owner_addr = ptr_addr;
+	off_t owner_off;
 	int in_cache;
 	unsigned char *byteptr;
 
@@ -354,7 +355,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 
 		__wiki_cache_mark_used(cachep, idx);
 		WIKI_CACHE_DEC_FREE(cachep);
-		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, active_ptr_addr);
+		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, owner_addr);
 
 		return slot;
 	}
@@ -365,18 +366,16 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 
 		old_cache = cachep->cache;
 
-		in_cache = __addr_in_cache(cachep, active_ptr_addr);
+		in_cache = __addr_in_cache(cachep, owner_addr);
 
 		if (in_cache)
-			active_ptr_offset = (off_t)((char *)active_ptr_addr - (char *)cachep->cache);
+			owner_off = (off_t)((char *)owner_addr - (char *)cachep->cache);
 
 		if (!(cachep->cache = realloc(cachep->cache, (new_capacity * cachep->objsize))))
 		{
 			fprintf(stderr, "wiki_cache_alloc: failed to reallocate memory for cache objects\n");
 			goto fail_release_mem;
 		}
-
-		void *__slot1 = cachep->cache;
 
 		cachep->capacity = new_capacity;
 		cachep->nr_free += (new_capacity - old_capacity);
@@ -386,7 +385,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		{
 			if (in_cache)
 			{
-				active_ptr_addr = (void *)((char *)cachep->cache + active_ptr_offset);
+				owner_addr = (void *)((char *)cachep->cache + owner_off);
 			}
 
 			WIKI_CACHE_ADJUST_ACTIVE_PTRS(cachep);
@@ -406,10 +405,10 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 
 		if (cachep->ctor)
 		{
+			wiki_cache_ctor_t ctor = cachep->ctor;
 			for (i = old_capacity; i < new_capacity; ++i)
 			{
-				assert((unsigned long)__wiki_cache_object(cachep, i) != (unsigned long)__slot1);
-				cachep->ctor(__wiki_cache_object(cachep, i));
+				ctor(__wiki_cache_object(cachep, i));
 			}
 		}
 
@@ -426,7 +425,7 @@ wiki_cache_alloc(wiki_cache_t *cachep, void *ptr_addr)
 		slot = __wiki_cache_object(cachep, idx);
 		__wiki_cache_mark_used(cachep, idx);
 		WIKI_CACHE_DEC_FREE(cachep);
-		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, active_ptr_addr);
+		WIKI_CACHE_SAVE_ACTIVE_PTR(cachep, slot, owner_addr);
 
 		return slot;
 	}
