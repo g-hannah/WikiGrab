@@ -80,12 +80,12 @@ tex_replace_matrices(buf_t *buf)
 		if (!p || p >= buf->buf_tail)
 			break;
 
-		end = nested_closing_char(p, buf->buf_tail, '{', '}');
+		end = strstr(p, "{\\end{pmatrix}");
 
 		if (!end)
 			break;
 
-		++end;
+		end += strlen("{\\end{pmatrix}");
 
 		buf_append_ex(&tmp, p, (end - p));
 		BUF_NULL_TERMINATE(&tmp);
