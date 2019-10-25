@@ -15,10 +15,6 @@ tex_replace_fractions(buf_t *buf)
 	assert(buf);
 	char *frac_start;
 	char *frac_end;
-	char numer[64];
-	char denom[64];
-	char *p;
-	char *q;
 	off_t off;
 	buf_t tmp;
 	size_t range;
@@ -40,47 +36,19 @@ tex_replace_fractions(buf_t *buf)
 		if (!frac_end)
 			break;
 
-		p = memchr(frac_start + 1, '{', (frac_end - frac_start));
-		if (!p)
-			break;
+		buf_append_ex(&tmp, frac_start, (frac_end - frac_start));
+		BUF_NULL_TERMINATE(&tmp);
 
-		q = memchr(p, '}', (frac_end - p));
+		buf_replace(&tmp, "}{", "/");
+		buf_replace(&tmp, "{\\frac", "");
+		buf_replace(&tmp, "{", "");
+		buf_replace(&tmp, "}", "");
 
-		if (!q)
-			break;
-
-		++p;
-
-		strncpy(numer, p, (q - p));
-		numer[q - p] = 0;
-
-		p = ++q;
-
-		if (*p != '{')
-			p = memchr(q, '{', (frac_end - q));
-
-		if (!p)
-			break;
-
-		q = memchr(p, '}', (frac_end - p));
-
-		if (!q)
-			break;
-
-		++p;
-
-		strncpy(denom, p, (q - p));
-		denom[q - p] = 0;
-
-		range = (frac_end - frac_start);
+		range = (frac_end - frac_start) + 1;
 		buf_collapse(buf, (off_t)(frac_start - buf->buf_head), range);
 		off = (off_t)(frac_start - buf->buf_head);
-		buf_shift(buf, off, strlen(numer) + 2 + strlen(denom));
+		buf_shift(buf, off, tmp.data_len);
 		frac_start = buf->buf_head + off;
-		buf_append(&tmp, numer);
-		buf_append(&tmp, "/");
-		buf_append(&tmp, denom);
-		buf_append(&tmp, " ");
 		memcpy(frac_start, tmp.buf_head, tmp.data_len);
 
 		buf_clear(&tmp);
@@ -91,6 +59,12 @@ tex_replace_fractions(buf_t *buf)
 
 	fail:
 	return -1;
+}
+
+static int
+tex_replace_matrices(buf_t *buf)
+{
+	return 0;
 }
 
 static int
@@ -167,60 +141,80 @@ tex_boldsymbol(buf_t *buf)
 	return -1;
 }
 
+struct tex_symbol_map
+{
+	char *tex;
+	char *txt;
+};
+
+const struct tex_symbol_map[] =
+{
+	{ "\\displaystyle", "" },
+	{ "\\sum", "Σ" },
+	{ "\\forall", "∀" },
+	{ "\\exists", "∃" },
+	{ "\\mapsto", "⟼" },
+	{ "\\leq", "<=" },
+	{ "\\geq", ">=" },
+	{ "\\epsilon", "ε" },
+	{ "\\alpha", "α" },
+	{ "\\Alpha", "Α" },
+	{ "\\beta", "β" },
+	{ "\\Beta", "Β" },
+	{ "\\gamma", "γ" },
+	{ "\\Gamma", "Γ" },
+	{ "\\pi", "π" },
+	{ "\\Pi", "Π" },
+	{ "\\phi", "Φ" },
+	{ "\\varphi", "φ" },
+	{ "\\theta", "θ" },
+	{ "\\omega", "ω" },
+	{ "\\Omega", "Ω" },
+	{ "\\chi", "Χ" },
+	{ "\\times", " ×" },
+	{ "\\cong", " ≅" },
+	{ "\\cos", "cos" },
+	{ "\\sin", "sin" },
+	{ "\\tan", "tan" },
+	{ "\\cot", "cot" },
+	{ "\\sec", "sec" },
+	{ "\\csc", "csc" },
+	{ "\\infty", "∞" },
+	{ "\\in", " ∈ " },
+	{ "\\notin", " ∉ " },
+	{ "\\backslash", " \\ " },
+	{ "\\colon", ":" },
+	{ "\\bar", " ̅" },
+	{ "\\varphi", "ϕ" },
+	{ "\\Rightarrow", "→" },
+	{ "\\quad", " " },
+	{ "\\cdots", "..." },
+	{ "\\vdots", "⋮" },
+	{ "{\\begin{pmatrix}", "" },
+	{ "\\end{pmatrix}", "" },
+	{ "\\\\", "\n" },
+	{ "&=", "=" },
+	{ "\\left", "" },
+	{ "\\right", "" },
+	{ (char *)NULL, (char *)NULL }
+};
+
 int
 tex_replace_symbols(buf_t *buf)
 {
 	assert(buf);
 
-	buf_replace(buf, "\\displaystyle", "");
-	buf_replace(buf, "\\sum", "Σ");
-	buf_replace(buf, "\\forall", "∀");
-	buf_replace(buf, "\\exists", "∃");
-	buf_replace(buf, "\\mapsto", "⟼");
-	buf_replace(buf, "\\leq", "<=");
-	buf_replace(buf, "\\geq", ">=");
-	buf_replace(buf, "\\epsilon", "ε");
-	buf_replace(buf, "\\alpha", "α");
-	buf_replace(buf, "\\Alpha", "Α");
-	buf_replace(buf, "\\beta", "β");
-	buf_replace(buf, "\\Beta", "Β");
-	buf_replace(buf, "\\gamma", "γ");
-	buf_replace(buf, "\\Gamma", "Γ");
-	buf_replace(buf, "\\pi", "π");
-	buf_replace(buf, "\\Pi", "Π");
-	buf_replace(buf, "\\phi", "Φ");
-	buf_replace(buf, "\\varphi", "φ");
-	buf_replace(buf, "\\theta", "θ");
-	buf_replace(buf, "\\omega", "ω");
-	buf_replace(buf, "\\Omega", "Ω");
-	buf_replace(buf, "\\chi", "Χ");
-	buf_replace(buf, "\\times", " ×");
-	buf_replace(buf, "\\cong", " ≅");
-	buf_replace(buf, "\\cos", "cos");
-	buf_replace(buf, "\\sin", "sin");
-	buf_replace(buf, "\\tan", "tan");
-	buf_replace(buf, "\\cot", "cot");
-	buf_replace(buf, "\\sec", "sec");
-	buf_replace(buf, "\\csc", "csc");
-	buf_replace(buf, "\\infty", "∞");
-	buf_replace(buf, "\\in", " ∈ ");
-	buf_replace(buf, "\\notin", " ∉ ");
-	buf_replace(buf, "\\backslash", " \\ ");
-	buf_replace(buf, "\\colon", ":");
-	buf_replace(buf, "\\bar", " ̅");
-	buf_replace(buf, "\\varphi", "ϕ");
-	buf_replace(buf, "\\Rightarrow", "→");
-	buf_replace(buf, "\\quad", " ");
-	buf_replace(buf, "\\cdots", ". . .");
-	buf_replace(buf, "\\vdots", "⋮");
-	buf_replace(buf, "{\\begin{pmatrix}", "");
-	buf_replace(buf, "\\end{pmatrix}", "");
-	buf_replace(buf, "\\\\", "\n");
-	buf_replace(buf, "&=", "=");
-	buf_replace(buf, "\\left", "");
-	buf_replace(buf, "\\right", "");
+	int i;
+
+	for (i = 0; tex_symbol_map[i].tex && tex_symbol_map[i].txt; ++i)
+	{
+		buf_replace(buf, tex_symbol_map[i].tex, tex_symbol_map[i].txt);
+	}
 
 	if (tex_replace_fractions(buf) < 0)
+		goto fail;
+
+	if (tex_replace_matrices(buf) < 0)
 		goto fail;
 
 	if (tex_boldsymbol(buf) < 0)
