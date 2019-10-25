@@ -147,7 +147,7 @@ struct tex_symbol_map
 	char *txt;
 };
 
-const struct tex_symbol_map[] =
+const struct tex_symbol_map symbol_map[] =
 {
 	{ "\\displaystyle", "" },
 	{ "\\sum", "Σ" },
@@ -206,9 +206,9 @@ tex_replace_symbols(buf_t *buf)
 
 	int i;
 
-	for (i = 0; tex_symbol_map[i].tex && tex_symbol_map[i].txt; ++i)
+	for (i = 0; symbol_map[i].tex && symbol_map[i].txt; ++i)
 	{
-		buf_replace(buf, tex_symbol_map[i].tex, tex_symbol_map[i].txt);
+		buf_replace(buf, symbol_map[i].tex, symbol_map[i].txt);
 	}
 
 	if (tex_replace_fractions(buf) < 0)
