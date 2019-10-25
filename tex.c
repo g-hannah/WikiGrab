@@ -75,25 +75,33 @@ tex_replace_matrices(buf_t *buf)
 
 	while (1)
 	{
-		p = strstr(savep, "{\\begin{pmatrix}");
+		p = strstr(savep, "{\\begin{bmatrix}");
 
 		if (!p || p >= buf->buf_tail)
 			break;
 
-		end = strstr(p, "{\\end{pmatrix}");
+		end = strstr(p, "{\\end{bmatrix}");
 
 		if (!end)
 			break;
 
-		end += strlen("{\\end{pmatrix}");
+		end += strlen("{\\end{bmatrix}");
 
 		buf_append_ex(&tmp, p, (end - p));
 		BUF_NULL_TERMINATE(&tmp);
 
 		buf_collapse(buf, (off_t)(p - buf->buf_head), (end - p));
 
-		buf_replace(&tmp, "{\\begin{pmatrix}", "");
-		buf_replace(&tmp, "{\\end{pmatrix}", "");
+		buf_replace(&tmp, "{\\begin{bmatrix}", "");
+		buf_replace(&tmp, "{\\end{bmatrix}", "");
+
+		buf_replace(&tmp, "_", "");
+		buf_replace(&tmp, "{", "}");
+		buf_replace(&tmp, "&", "");
+		buf_replace(&tmp, "\\cdots", "...");
+		buf_replace(&tmp, "\\\\", "\n");
+		buf_replace(&tmp, "\\vdots", ".\n.\n.\n");
+		buf_replace(&tmp, "\\ddots", "");
 	}
 #endif
 
