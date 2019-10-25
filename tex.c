@@ -64,6 +64,39 @@ tex_replace_fractions(buf_t *buf)
 static int
 tex_replace_matrices(buf_t *buf)
 {
+	char *p;
+	char *savep;
+	char *end;
+	buf_t tmp;
+
+	buf_init(&tmp, 1024);
+	savep = buf->buf_head;
+#if 0
+
+	while (1)
+	{
+		p = strstr(savep, "{\\begin{pmatrix}");
+
+		if (!p || p >= buf->buf_tail)
+			break;
+
+		end = nested_closing_char(p, buf->buf_tail, '{', '}');
+
+		if (!end)
+			break;
+
+		++end;
+
+		buf_append_ex(&tmp, p, (end - p));
+		BUF_NULL_TERMINATE(&tmp);
+
+		buf_collapse(buf, (off_t)(p - buf->buf_head), (end - p));
+
+		buf_replace(&tmp, "{\\begin{pmatrix}", "");
+		buf_replace(&tmp, "{\\end{pmatrix}", "");
+	}
+#endif
+
 	return 0;
 }
 
