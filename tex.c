@@ -203,8 +203,8 @@ tex_replace_symbols(buf_t *buf)
 	buf_replace(buf, "\\sec", "sec");
 	buf_replace(buf, "\\csc", "csc");
 	buf_replace(buf, "\\infty", "∞");
-	buf_replace(buf, "\\in", " ∈");
-	buf_replace(buf, "\\notin", "∉");
+	buf_replace(buf, "\\in", " ∈ ");
+	buf_replace(buf, "\\notin", " ∉ ");
 	buf_replace(buf, "\\backslash", " \\ ");
 	buf_replace(buf, "\\colon", ":");
 	buf_replace(buf, "\\bar", " ̅");
