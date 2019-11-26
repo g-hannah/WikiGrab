@@ -28,7 +28,10 @@ static GtkWidget *button_get;
 static GtkToolItem *item_button_open;
 static GtkWidget *button_open;
 
-static GtkWidget *text_area;
+#define SCROLLING_WIDTH 950
+#define SCROLLING_HEIGHT 700
+static GtkWidget *scrolling;
+static GtkWidget *text_view;
 
 #define PROG_ICON_WIDTH 240
 #define PROG_ICON_HEIGHT 240
@@ -104,7 +107,13 @@ create_window(void)
 	gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item_button_get, 1);
 	gtk_toolbar_insert(GTK_TOOLBAR(toolbar), item_button_open, 2);
 
+	scrolling = gtk_scrolled_window_new(NULL, NULL);
+	gtk_widget_set_size_request(scrolling, SCROLLING_WIDTH, SCROLLING_HEIGHT);
+	text_view = gtk_text_view_new();
+	gtk_container_add(GTK_CONTAINER(scrolling), text_view);
+
 	gtk_grid_attach(GTK_GRID(grid), toolbar, 0, 0, 1, 1);
+	gtk_grid_attach(GTK_GRID(grid), scrolling, 0, 1, 1, 1);
 
 	gtk_container_add(GTK_CONTAINER(window), grid);
 
