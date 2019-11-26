@@ -28,9 +28,12 @@ static GtkWidget *button_get;
 static GtkToolItem *item_button_open;
 static GtkWidget *button_open;
 
-#define SCROLLING_WIDTH 950
+#define SCROLLING_WIDTH 995
 #define SCROLLING_HEIGHT 700
 static GtkWidget *scrolling;
+
+#define TEXT_VIEW_INDENT 20
+#define TEXT_VIEW_JUSTIFICATION GTK_JUSTIFY_CENTER
 static GtkWidget *text_view;
 
 #define PROG_ICON_WIDTH 240
@@ -110,6 +113,15 @@ create_window(void)
 	scrolling = gtk_scrolled_window_new(NULL, NULL);
 	gtk_widget_set_size_request(scrolling, SCROLLING_WIDTH, SCROLLING_HEIGHT);
 	text_view = gtk_text_view_new();
+	g_object_set(G_OBJECT(text_view), "editable", FALSE, "justification", TEXT_VIEW_JUSTIFICATION, "indent", TEXT_VIEW_INDENT, NULL);
+
+	GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
+	gtk_text_buffer_set_text(buf,
+			"\n\n\n\n\t\t" PROG_NAME " v" PROG_BUILD"\n"
+			"\n"
+			"\tEnter URL of a wikipedia article above\n"
+			"\tand read the article in text format!\n\0", -1);
+
 	gtk_container_add(GTK_CONTAINER(scrolling), text_view);
 
 	gtk_grid_attach(GTK_GRID(grid), toolbar, 0, 0, 1, 1);
