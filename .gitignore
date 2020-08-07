@@ -1,6 +1,7 @@
 *.txt
 *.gch
 *.o
+*.bak
 .*
 !.gitignore
 wikigrab
