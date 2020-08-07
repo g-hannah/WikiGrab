@@ -171,169 +171,56 @@ main(int argc, char *argv[])
 	if (check_wikigrab_dir() < 0)
 		goto fail;
 
-	connection_t conn;
-	//buf_t read_copy;
-	http_header_t *location;
+	struct http_t *http = NULL;
 	off_t off;
-	int status_code;
+	int code;
 	int exit_ret = EXIT_SUCCESS;
 	int host_max;
 
-	http_hcache = wiki_cache_create(
-				"http_header_cache",
-				sizeof(http_header_t),
-				0,
-				wiki_cache_http_cookie_ctor,
-				wiki_cache_http_cookie_dtor);
-
-	atexit(cache_cleanup);
-	clear_struct(&conn);
 	host_max = sysconf(_SC_HOST_NAME_MAX);
 
-	if (!(conn.host = calloc(host_max, 1)))
-	{
-		fprintf(stderr, "main: calloc error (%s)\n", strerror(errno));
-		goto fail;
-	}
+	http = HTTP_new(0xdeadbeef);
+	assert(http);
 
-	if (!(conn.page = calloc(host_max, 1)))
-	{
-		fprintf(stderr, "main: calloc error (%s)\n", strerror(errno));
-		goto fail;
-	}
+	http->usingSecure = 1; // use TLS
+	http->followRedirects = 1; // automatically follow 3xx status codes
+	http->verb = GET;
 
-	if (!(http_parse_host(argv[1], conn.host)))
-	{
-		fprintf(stderr, "main: failed to parse host from URL\n");
-		goto fail;
-	}
+	http->URL_parse_host(argv[1], http->host);
+	http->URL_parse_page(argv[1], http->page);
 
-	if (!(http_parse_page(argv[1], conn.page)))
-	{
-		fprintf(stderr, "main: failed to parse page from URL\n");
-		goto fail;
-	}
-
-	if (open_connection(&conn) < 0)
+	if (-1 == http_connect(http))
 		goto fail;
 
-	again:
-	buf_clear(&conn.write_buf);
+	http->send_request(http);
+	code = http->recv_response(http);
 
-	if (http_build_request_header(&conn, HTTP_GET, conn.page) < 0)
+	if (HTTP_OK != code)
+		goto fail_disconnect;
+
+	exit_ret = extract_wiki_article(http_rbuf(http));
+	if (exit_ret < 0)
 	{
-		fprintf(stderr, "main: http_build_get_request_header error\n");
+		printf("main: extract_wiki_article error\n");
 		goto fail_disconnect;
 	}
 
-	if (http_check_header(&conn.read_buf, "Set-Cookie", (off_t)0, &off))
-	{
-		off = 0;
-		wiki_cache_clear_all(http_hcache);
-
-		while (http_check_header(&conn.read_buf, "Set-Cookie", off, &off))
-		{
-			cookie = (http_header_t *)wiki_cache_alloc(http_hcache, &cookie);
-			if (!(http_fetch_header(&conn.read_buf, "Set-Cookie", cookie, off)))
-			{
-				fprintf(stderr, "main: http_fetch_header error\n");
-				goto fail_disconnect;
-			}
-
-			if (http_append_header(&conn.write_buf, cookie) < 0)
-			{
-				fprintf(stderr, "main: http_append_header error\n");
-				goto fail_disconnect;
-			}
-
-			++off;
-		}
-	}
-
-	buf_clear(&conn.read_buf);
-
-	if (option_set(OPT_REQ_HEADER))
-		fprintf(stdout, "%s", conn.write_buf.buf_head);
-
-	if (http_send_request(&conn) < 0)
-		goto fail_disconnect;
-
-	if (http_recv_response(&conn) < 0)
-		goto fail_disconnect;
-
-	if (option_set(OPT_RES_HEADER))
-		fprintf(stdout, "%.*s", (int)http_response_header_len(&conn.read_buf), conn.read_buf.buf_head);
-
-	status_code = http_status_code_int(&conn.read_buf);
-
-	switch(status_code)
-	{
-		case HTTP_OK:
-			exit_ret = extract_wiki_article(&conn.read_buf);
-			if (exit_ret < 0)
-			{
-				printf("main: extract_wiki_article error\n");
-				goto fail_disconnect;
-			}
-			break;
-		case HTTP_MOVED_PERMANENTLY:
-			location = wiki_cache_alloc(http_hcache, &location);
-			assert(wiki_cache_obj_used(http_hcache, (void *)location));
-
-			if (!(http_fetch_header(&conn.read_buf, "Location", location, (off_t)0)))
-			{	
-				fprintf(stderr, "main: http_fetch_header error\n");
-				goto fail_disconnect;
-			}
-
-			strncpy(conn.page, location->value, location->vlen);
-			conn.page[location->vlen] = 0;
-			if (!(http_parse_host(location->value, conn.host)))
-			{
-				fprintf(stderr, "main: failed to parse host from URL\n");
-				goto fail_disconnect;
-			}
-
-#if 0
-/*
- * Default is now to always use TLS
- */
-			if (!strncmp("https", location->value, 5) && !option_set(OPT_USE_TLS))
-			{
-				buf_init(&read_copy, conn.read_buf.buf_size);
-				buf_copy(&read_copy, &conn.read_buf);
-
-				conn_switch_to_tls(&conn);
-
-				buf_copy(&conn.read_buf, &read_copy);
-				buf_destroy(&read_copy);
-			}
-#endif
-
-			buf_clear(&conn.write_buf);
-			wiki_cache_dealloc(http_hcache, (void *)location, &location);
-			goto again;
-		default:
-			fprintf(stderr, "Error (HTTP status code: %d -- %s)\n", status_code, http_status_code_string(status_code));
-			goto fail_disconnect;
-	}
-
-	free(conn.host);
-	free(conn.page);
-	close_connection(&conn);
+	http_disconnect(http);
+	HTTP_delete(http);
 	exit(EXIT_SUCCESS);
 
-	fail_disconnect:
-	fprintf(stderr, "Disconnecting from remote server\n");
-	free(conn.host);
-	free(conn.page);
-	close_connection(&conn);
+fail_disconnect:
 
-	fail:
-	if (conn.host)
-		free(conn.host);
-	if (conn.page)
-		free(conn.page);
+	fprintf(stderr, "Disconnecting from remote server\n");
+	http_disconnect(http);
+	HTTP_delete(http);
+
+fail:
+	if (http)
+	{
+		http_disconnect(http);
+		HTTP_delete(http);
+	}
 
 	exit(EXIT_FAILURE);
 }
