@@ -1072,9 +1072,6 @@ extract_wiki_article(buf_t *buf)
 	int out_fd = -1;
 	buf_t file_title;
 	buf_t content_buf;
-	http_header_t *server;
-	http_header_t *date;
-	http_header_t *lastmod;
 	static char inet6_string[INET6_ADDRSTRLEN];
 	char *buffer = NULL;
 	char *home;
@@ -1126,49 +1123,6 @@ extract_wiki_article(buf_t *buf)
 	article_header.lastmod = (value_t *)wiki_cache_alloc(value_cache, &article_header.lastmod);
 	article_header.downloaded = (value_t *)wiki_cache_alloc(value_cache, &article_header.downloaded);
 	article_header.content_len = (value_t *)wiki_cache_alloc(value_cache, &article_header.content_len);
-
-	/* Extract these values from the HTTP response header */
-	server = (http_header_t *)wiki_cache_alloc(http_hcache, &server);
-	date = (http_header_t *)wiki_cache_alloc(http_hcache, &date);
-	lastmod = (http_header_t *)wiki_cache_alloc(http_hcache, &lastmod);
-
-	if (!http_fetch_header(buf, "Server", server, (off_t)0))
-		goto out_destroy_file;
-	if (!http_fetch_header(buf, "Date", date, (off_t)0))
-		goto out_destroy_file;
-	if (!http_fetch_header(buf, "Last-Modified", lastmod, (off_t)0))
-		goto out_destroy_file;
-
-	if (server->vlen < MAX_VALUE_LEN)
-		len = server->vlen;
-	else
-		len = (MAX_VALUE_LEN - 1);
-
-	strncpy(article_header.server_name->value, server->value, len);
-	article_header.server_name->value[len] = 0;
-	article_header.server_name->vlen = len;
-
-	if (date->vlen < MAX_VALUE_LEN)
-		len = date->vlen;
-	else
-		len = (MAX_VALUE_LEN - 1);
-
-	strncpy(article_header.downloaded->value, date->value, len);
-	article_header.downloaded->value[len] = 0;
-	article_header.downloaded->vlen = len;
-
-	if (lastmod->vlen < MAX_VALUE_LEN)
-		len = lastmod->vlen;
-	else
-		len = (MAX_VALUE_LEN - 1);
-
-	strncpy(article_header.lastmod->value, lastmod->value, len);
-	article_header.lastmod->value[len] = 0;
-	article_header.lastmod->vlen = lastmod->vlen;
-
-	wiki_cache_dealloc(http_hcache, (void *)server, &server);
-	wiki_cache_dealloc(http_hcache, (void *)date, &date);
-	wiki_cache_dealloc(http_hcache, (void *)lastmod, &lastmod);
 
 	if (buf_init(&content_buf, DEFAULT_TMP_BUF_SIZE) < 0)
 		goto fail_release_mem;
